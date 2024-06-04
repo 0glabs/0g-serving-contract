@@ -1,5 +1,5 @@
-import { ethers } from "hardhat";
-import { assert, expect } from "chai";
+import { ethers, upgrades } from "hardhat";
+import { expect } from "chai";
 import { DataRetrieve, DataRetrieve__factory } from "../typechain-types";
 import { time } from "@nomicfoundation/hardhat-toolbox/network-helpers";
 import {
@@ -30,7 +30,7 @@ describe("DataRetrieve", () => {
 
   const ownerInitialBalance = 1000;
   const user1InitialBalance = 2000;
-  const LOCK_TIME = 24 * 60 * 60;
+  const lockTime = 24 * 60 * 60;
 
   const provider1ServiceType = randomBytes(32);
   const provider1Price = 100;
@@ -46,7 +46,10 @@ describe("DataRetrieve", () => {
   });
 
   beforeEach(async () => {
-    dataRetrieve = await DataRetrieve.deploy();
+    const beacon = await upgrades.deployBeacon(DataRetrieve);
+    dataRetrieve = (await upgrades.deployBeaconProxy(beacon, DataRetrieve, [
+      lockTime,
+    ])) as any;
 
     [ownerAddress, user1Address, provider1Address, provider2Address] =
       await Promise.all([
@@ -74,22 +77,50 @@ describe("DataRetrieve", () => {
     provider1createdAt = (block as Block).timestamp;
   });
 
+  describe("Owner", () => {
+    it("should succeed in updating lock time succeed", async () => {
+      const updatedLockTime = 2 * 24 * 60 * 60;
+      await expect(dataRetrieve.updateLockTime(updatedLockTime)).not.to.be
+        .reverted;
+
+      const result = await dataRetrieve.lockTime();
+      expect(result).to.equal(BigInt(updatedLockTime));
+    });
+  });
+
   describe("User", () => {
+    it("should fail to update the lock time if it is not the owner", async () => {
+      const updatedLockTime = 2 * 24 * 60 * 60;
+      await expect(
+        dataRetrieve.connect(user1).updateLockTime(updatedLockTime)
+      ).to.be.revertedWithCustomError(
+        DataRetrieve,
+        "OwnableUnauthorizedAccount"
+      );
+
+      const result = await dataRetrieve.lockTime();
+      expect(result).to.equal(BigInt(lockTime));
+    });
+
     it("should deposit fund and update balance", async () => {
       const depositAmount = 1000;
       await dataRetrieve.depositFund({ value: depositAmount });
 
       const updatedBalance = await dataRetrieve.getUserBalance(ownerAddress);
-      assert.equal(updatedBalance, BigInt(ownerInitialBalance + depositAmount));
+      expect(updatedBalance).to.equal(
+        BigInt(ownerInitialBalance + depositAmount)
+      );
     });
 
     it("should get all users", async () => {
-      const [addresses, balances] = await dataRetrieve.getAllUsers();
+      const [addresses, balances] = (await dataRetrieve.getAllUsers()).map(
+        (value) => [...value]
+      );
 
-      expect(addresses).to.deep.equal([ownerAddress, user1Address]);
-      expect(balances).to.deep.equal([
-        ownerInitialBalance,
-        user1InitialBalance,
+      expect(addresses).to.have.members([ownerAddress, user1Address]);
+      expect(balances).to.have.members([
+        BigInt(ownerInitialBalance),
+        BigInt(user1InitialBalance),
       ]);
     });
   });
@@ -104,22 +135,24 @@ describe("DataRetrieve", () => {
       const block = await ethers.provider.getBlock(
         (receipt as TransactionReceipt).blockNumber
       );
-      unlockTime = (block as Block).timestamp + LOCK_TIME;
+      unlockTime = (block as Block).timestamp + lockTime;
       refundIndex = (
         await dataRetrieve.queryFilter(dataRetrieve.filters.RefundRequested, -1)
       )[0].args[1];
     });
 
-    it("Should revert if called too soon", async () => {
+    it("should revert if called too soon", async () => {
       await expect(dataRetrieve.processRefund(refundIndex)).to.be.reverted;
     });
 
-    it("Shouldn't fail if the unlockTime has arrived and called", async () => {
+    it("should succeeded if the unlockTime has arrived and called", async () => {
       await time.increaseTo(unlockTime);
 
       await expect(dataRetrieve.processRefund(refundIndex)).not.to.be.reverted;
       const finalBalance = await dataRetrieve.getUserBalance(ownerAddress);
-      assert.equal(finalBalance, BigInt(ownerInitialBalance - refundAmount));
+      expect(finalBalance).to.be.equal(
+        BigInt(ownerInitialBalance - refundAmount)
+      );
     });
   });
 
@@ -134,13 +167,17 @@ describe("DataRetrieve", () => {
     });
 
     it("should get all services", async () => {
-      const [addresses, prices, urls, serviceTypes, updatedAts] =
-        await dataRetrieve.getAllServices();
+      const [addresses, prices, urls, serviceTypes, updatedAts] = (
+        await dataRetrieve.getAllServices()
+      ).map((value) => [...value]);
 
-      expect(addresses).to.deep.equal([provider1Address, provider2Address]);
-      expect(prices).to.deep.equal([provider1Price, provider2Price]);
-      expect(urls).to.deep.equal([provider1Url, provider2Url]);
-      expect(serviceTypes).to.deep.equal([
+      expect(addresses).to.have.members([provider1Address, provider2Address]);
+      expect(prices).to.have.members([
+        BigInt(provider1Price),
+        BigInt(provider2Price),
+      ]);
+      expect(urls).to.have.members([provider1Url, provider2Url]);
+      expect(serviceTypes).to.have.members([
         "0x" + Buffer.from(provider1ServiceType).toString("hex"),
         "0x" + Buffer.from(provider2ServiceType).toString("hex"),
       ]);
@@ -201,25 +238,27 @@ describe("DataRetrieve", () => {
     beforeEach(async () => {
       requestCreatedAt = provider1createdAt + 1;
       const requestsFromOwner = await Promise.all(
-        Array.from({ length: requestLength }, () =>
+        Array.from({ length: requestLength }, (_, index) =>
           getSignedRequest(
             owner,
             ownerAddress,
             provider1Address,
             provider1ServiceType,
-            requestCreatedAt
+            requestCreatedAt,
+            index + 1
           )
         )
       );
 
       const requestsFromUser1 = await Promise.all(
-        Array.from({ length: requestLength }, () =>
+        Array.from({ length: requestLength }, (_, index) =>
           getSignedRequest(
             user1,
             user1Address,
             provider1Address,
             provider1ServiceType,
-            requestCreatedAt
+            requestCreatedAt,
+            index + 1
           )
         )
       );
@@ -246,15 +285,51 @@ describe("DataRetrieve", () => {
 
     it("should failed due to double spending", async () => {
       requestTrace[0].requests[1].nonce = requestTrace[0].requests[0].nonce;
-      expect(dataRetrieve.connect(provider1).settleFees(requestTrace)).to.be
-        .reverted;
+
+      await expect(
+        dataRetrieve.connect(provider1).settleFees(requestTrace)
+      ).to.be.revertedWith("Nonce used");
     });
 
-    // it("should failed due to invalid recovered signature", async () => {});
+    it("should failed due to invalid recovered signature", async () => {
+      requestTrace[0].requests[0].userAddress = user1Address;
 
-    // it("should failed due to changes in the service after the request was made", async () => {});
+      await expect(
+        dataRetrieve.connect(provider1).settleFees(requestTrace)
+      ).to.be.revertedWith("Invalid request");
+    });
 
-    // it("should failed due to insufficient balance", async () => {});
+    it("should failed due to changes in the service after the request was made", async () => {
+      const modifiedPrice = 10000;
+      await dataRetrieve
+        .connect(provider1)
+        .addOrUpdateService(provider1ServiceType, modifiedPrice, provider1Url);
+
+      await expect(
+        dataRetrieve.connect(provider1).settleFees(requestTrace)
+      ).to.be.revertedWith("Service updated");
+    });
+
+    it("should failed due to insufficient balance", async () => {
+      const excessiveRequestLength = user1InitialBalance / provider1Price + 1;
+      const excessiveRequests = await Promise.all(
+        Array.from({ length: excessiveRequestLength }, (_, index) =>
+          getSignedRequest(
+            user1,
+            user1Address,
+            provider1Address,
+            provider1ServiceType,
+            requestCreatedAt,
+            index + 1
+          )
+        )
+      );
+      const excessiveRequestTrace = [{ requests: excessiveRequests }];
+
+      await expect(
+        dataRetrieve.connect(provider1).settleFees(excessiveRequestTrace)
+      ).to.be.revertedWith("Insufficient balance");
+    });
   });
 });
 
@@ -263,9 +338,9 @@ async function getSignedRequest(
   user: string,
   provider: string,
   serviceType: Uint8Array,
-  createAt: number
+  createAt: number,
+  nonce: number
 ): Promise<RequestStruct> {
-  const nonce = Math.floor(Math.random() * 1000);
   const hash = ethers.solidityPackedKeccak256(
     ["address", "address", "bytes32", "uint256", "uint256"],
     [provider, user, serviceType, nonce, createAt]

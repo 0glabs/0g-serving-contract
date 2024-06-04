@@ -3,11 +3,11 @@ pragma solidity >=0.8.0 <0.9.0;
 
 import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 import "@openzeppelin/contracts/utils/structs/EnumerableMap.sol";
-import "./User.sol";
-import "./Service.sol";
-import "./Request.sol";
+import "../User.sol";
+import "../Service.sol";
+import "../Request.sol";
 
-contract DataRetrieve is OwnableUpgradeable {
+contract DataRetrieveV2 is OwnableUpgradeable {
     using UserLibrary for UserLibrary.UserMap;
     using ServiceLibrary for ServiceLibrary.ServiceMap;
     using RequestLibrary for Request;
@@ -158,5 +158,28 @@ contract DataRetrieve is OwnableUpgradeable {
         user.balance -= amount;
         emit BalanceUpdated(requests[0].userAddress, user.balance);
         payable(msg.sender).transfer(amount);
+    }
+
+    function retrieveAllData()
+        public
+        view
+        returns (
+            address[] memory userAddresses,
+            uint256[] memory userBalances,
+            address[] memory providerAddresses,
+            uint256[] memory servicePrices,
+            string[] memory serviceUrls,
+            bytes32[] memory serviceTypes,
+            uint256[] memory serviceUpdatedAts
+        )
+    {
+        (userAddresses, userBalances) = getAllUsers();
+        (
+            providerAddresses,
+            servicePrices,
+            serviceUrls,
+            serviceTypes,
+            serviceUpdatedAts
+        ) = getAllServices();
     }
 }
