@@ -4,14 +4,14 @@ pragma solidity >=0.8.0 <0.9.0;
 import "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
 
 struct User {
-    uint256 balance;
-    uint256 pendingRefund;
+    uint balance;
+    uint pendingRefund;
     Refund[] refunds;
 }
 
 struct Refund {
-    uint256 amount;
-    uint256 createdAt;
+    uint amount;
+    uint createdAt;
     bool processed;
 }
 
@@ -20,44 +20,33 @@ library UserLibrary {
 
     error UserNotexists(address key);
     error InsufficientBalance(address key);
-    error RefundInvalid(address key, uint256 index);
-    error RefundProcessed(address key, uint256 index);
-    error RefundLocked(address key, uint256 index);
+    error RefundInvalid(address key, uint index);
+    error RefundProcessed(address key, uint index);
+    error RefundLocked(address key, uint index);
 
     struct UserMap {
         EnumerableSet.AddressSet _keys;
         mapping(address => User) _values;
     }
 
-    function getUser(
-        UserMap storage map,
-        address key
-    ) internal view returns (User storage) {
+    function getUser(UserMap storage map, address key) internal view returns (User storage) {
         return _get(map, key);
     }
 
     function getAllUsers(
         UserMap storage map
-    )
-        internal
-        view
-        returns (address[] memory addresses, uint256[] memory balances)
-    {
-        uint256 len = _length(map);
+    ) internal view returns (address[] memory addresses, uint[] memory balances) {
+        uint len = _length(map);
         addresses = new address[](len);
-        balances = new uint256[](len);
-        for (uint256 i = 0; i < len; i++) {
+        balances = new uint[](len);
+        for (uint i = 0; i < len; i++) {
             (address key, User storage value) = _at(map, i);
             addresses[i] = key;
             balances[i] = value.balance;
         }
     }
 
-    function depositFund(
-        UserMap storage map,
-        address key,
-        uint256 amount
-    ) internal returns (uint256) {
+    function depositFund(UserMap storage map, address key, uint amount) internal returns (uint) {
         if (!_contains(map, key)) {
             _set(map, key, amount);
             return amount;
@@ -67,11 +56,7 @@ library UserLibrary {
         return user.balance;
     }
 
-    function requestRefund(
-        UserMap storage map,
-        address key,
-        uint256 amount
-    ) internal returns (uint256) {
+    function requestRefund(UserMap storage map, address key, uint amount) internal returns (uint) {
         User storage user = _get(map, key);
         if ((user.balance - user.pendingRefund) < amount) {
             revert InsufficientBalance(key);
@@ -84,9 +69,9 @@ library UserLibrary {
     function processRefund(
         UserMap storage map,
         address key,
-        uint256 index,
-        uint256 lockTime
-    ) internal returns (uint256, uint256, uint256) {
+        uint index,
+        uint lockTime
+    ) internal returns (uint, uint, uint) {
         User storage user = _get(map, key);
         if (index > user.refunds.length) {
             revert RefundInvalid(key, index);
@@ -104,29 +89,20 @@ library UserLibrary {
         return (refund.amount, user.balance, user.pendingRefund);
     }
 
-    function _at(
-        UserMap storage map,
-        uint256 index
-    ) internal view returns (address, User storage) {
+    function _at(UserMap storage map, uint index) internal view returns (address, User storage) {
         address key = map._keys.at(index);
         return (key, map._values[key]);
     }
 
-    function _contains(
-        UserMap storage map,
-        address key
-    ) internal view returns (bool) {
+    function _contains(UserMap storage map, address key) internal view returns (bool) {
         return map._keys.contains(key);
     }
 
-    function _length(UserMap storage map) internal view returns (uint256) {
+    function _length(UserMap storage map) internal view returns (uint) {
         return map._keys.length();
     }
 
-    function _get(
-        UserMap storage map,
-        address key
-    ) internal view returns (User storage) {
+    function _get(UserMap storage map, address key) internal view returns (User storage) {
         User storage value = map._values[key];
         if (!_contains(map, key)) {
             revert UserNotexists(key);
@@ -134,7 +110,7 @@ library UserLibrary {
         return value;
     }
 
-    function _set(UserMap storage map, address key, uint256 balance) internal {
+    function _set(UserMap storage map, address key, uint balance) internal {
         User storage user = map._values[key];
         user.balance = balance;
         map._keys.add(key);

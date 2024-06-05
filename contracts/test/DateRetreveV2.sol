@@ -12,50 +12,31 @@ contract DataRetrieveV2 is OwnableUpgradeable {
     using ServiceLibrary for ServiceLibrary.ServiceMap;
     using RequestLibrary for Request;
 
-    uint256 public lockTime;
+    uint public lockTime;
     UserLibrary.UserMap private userMap;
     ServiceLibrary.ServiceMap private serviceMap;
-    mapping(bytes32 => uint256) private nonceMap;
+    mapping(bytes32 => uint) private nonceMap;
 
-    event BalanceUpdated(address indexed user, uint256 amount);
-    event RefundRequested(
-        address indexed user,
-        uint256 indexed index,
-        uint256 amount,
-        uint256 timestamp
-    );
-    event RefundProcessed(
-        address indexed user,
-        uint256 indexed index,
-        uint256 amount
-    );
-    event ServiceUpdated(
-        address indexed service,
-        bytes32 indexed serviceType,
-        uint256 price,
-        string url,
-        uint256 updatedAt
-    );
+    event BalanceUpdated(address indexed user, uint amount);
+    event RefundRequested(address indexed user, uint indexed index, uint amount, uint timestamp);
+    event RefundProcessed(address indexed user, uint indexed index, uint amount);
+    event ServiceUpdated(address indexed service, bytes32 indexed serviceType, uint price, string url, uint updatedAt);
     event ServiceRemoved(address indexed service, bytes32 indexed serviceType);
 
-    function initialize(uint256 _locktime) public initializer {
+    function initialize(uint _locktime) public initializer {
         __Ownable_init(msg.sender);
         lockTime = _locktime;
     }
 
-    function updateLockTime(uint256 _locktime) public onlyOwner {
+    function updateLockTime(uint _locktime) public onlyOwner {
         lockTime = _locktime;
     }
 
-    function getUserBalance(address key) public view returns (uint256) {
+    function getUserBalance(address key) public view returns (uint) {
         return userMap.getUser(key).balance;
     }
 
-    function getAllUsers()
-        public
-        view
-        returns (address[] memory, uint256[] memory)
-    {
+    function getAllUsers() public view returns (address[] memory, uint[] memory) {
         return userMap.getAllUsers();
     }
 
@@ -64,14 +45,13 @@ contract DataRetrieveV2 is OwnableUpgradeable {
         emit BalanceUpdated(msg.sender, balance);
     }
 
-    function requestRefund(uint256 amount) external {
-        uint256 index = userMap.requestRefund(msg.sender, amount);
+    function requestRefund(uint amount) external {
+        uint index = userMap.requestRefund(msg.sender, amount);
         emit RefundRequested(msg.sender, index, amount, block.timestamp);
     }
 
-    function processRefund(uint256 index) external {
-        (uint256 amount, uint256 balance, uint256 pendingRefund) = userMap
-            .processRefund(msg.sender, index, lockTime);
+    function processRefund(uint index) external {
+        (uint amount, uint balance, uint pendingRefund) = userMap.processRefund(msg.sender, index, lockTime);
 
         payable(msg.sender).transfer(amount);
         emit RefundProcessed(msg.sender, index, pendingRefund);
@@ -81,11 +61,7 @@ contract DataRetrieveV2 is OwnableUpgradeable {
     function getService(
         address provider,
         bytes32 serviceType
-    )
-        public
-        view
-        returns (uint256 price, string memory url, uint256 updatedAt)
-    {
+    ) public view returns (uint price, string memory url, uint updatedAt) {
         (price, url, updatedAt) = serviceMap.getService(provider, serviceType);
     }
 
@@ -94,29 +70,18 @@ contract DataRetrieveV2 is OwnableUpgradeable {
         view
         returns (
             address[] memory addresses,
-            uint256[] memory prices,
+            uint[] memory prices,
             string[] memory urls,
             bytes32[] memory serviceTypes,
-            uint256[] memory updatedAts
+            uint[] memory updatedAts
         )
     {
-        (addresses, prices, urls, serviceTypes, updatedAts) = serviceMap
-            .getAllServices();
+        (addresses, prices, urls, serviceTypes, updatedAts) = serviceMap.getAllServices();
     }
 
-    function addOrUpdateService(
-        bytes32 serviceType,
-        uint256 price,
-        string calldata url
-    ) external {
+    function addOrUpdateService(bytes32 serviceType, uint price, string calldata url) external {
         serviceMap.addOrUpdateService(msg.sender, serviceType, price, url);
-        emit ServiceUpdated(
-            msg.sender,
-            serviceType,
-            price,
-            url,
-            block.timestamp
-        );
+        emit ServiceUpdated(msg.sender, serviceType, price, url, block.timestamp);
     }
 
     function removeService(bytes32 serviceType) external {
@@ -133,22 +98,17 @@ contract DataRetrieveV2 is OwnableUpgradeable {
 
     function _settleFees(Request[] memory requests) internal {
         require(requests.length > 0, "Empty request trace");
-        uint256 amount = 0;
+        uint amount = 0;
         for (uint i = 0; i < requests.length; i++) {
             Request memory request = requests[i];
 
-            bytes32 key = keccak256(
-                abi.encode(request.userAddress, msg.sender)
-            );
+            bytes32 key = keccak256(abi.encode(request.userAddress, msg.sender));
             require(request.nonce > nonceMap[key], "Nonce used");
             nonceMap[key] = request.nonce;
 
             require(request.verify(msg.sender), "Invalid request");
 
-            (uint256 price, , uint256 updatedAt) = serviceMap.getService(
-                msg.sender,
-                request.serviceType
-            );
+            (uint price, , uint updatedAt) = serviceMap.getService(msg.sender, request.serviceType);
             require(updatedAt < request.createdAt, "Service updated");
             amount += price;
         }
@@ -165,21 +125,15 @@ contract DataRetrieveV2 is OwnableUpgradeable {
         view
         returns (
             address[] memory userAddresses,
-            uint256[] memory userBalances,
+            uint[] memory userBalances,
             address[] memory providerAddresses,
-            uint256[] memory servicePrices,
+            uint[] memory servicePrices,
             string[] memory serviceUrls,
             bytes32[] memory serviceTypes,
-            uint256[] memory serviceUpdatedAts
+            uint[] memory serviceUpdatedAts
         )
     {
         (userAddresses, userBalances) = getAllUsers();
-        (
-            providerAddresses,
-            servicePrices,
-            serviceUrls,
-            serviceTypes,
-            serviceUpdatedAts
-        ) = getAllServices();
+        (providerAddresses, servicePrices, serviceUrls, serviceTypes, serviceUpdatedAts) = getAllServices();
     }
 }
