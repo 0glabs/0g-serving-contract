@@ -245,6 +245,7 @@ describe("DataRetrieve", () => {
         });
 
         it("should failed due to changes in the service after the request was made", async () => {
+            await time.increaseTo(requestCreatedAt + 1);
             const modifiedPrice = 10000;
             const tx = await dataRetrieve
                 .connect(provider1)
