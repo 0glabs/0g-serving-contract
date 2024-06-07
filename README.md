@@ -57,6 +57,10 @@ BEACON_ADDRESS=<old beacon address> DATA_RETRIEVE_ADDRESS=<proxy address> yarn u
     4. Re-enter the Hardhat console and check the contract states:
 
         ```shell
-        const [userAddresses,userBalances,,,,,] = (await dataRetrieveV2.retrieveAllData())
+        yarn hardhat console --network zg
+        # Commands in the Hardhat console:
+        const DataRetrieveV2 = await ethers.getContractFactory("DataRetrieveV2")
+        const dataRetrieveV2 = await DataRetrieveV2.attach("<proxy contract name>")
+        const [userAddresses,userBalances] = (await dataRetrieveV2.retrieveAllData())
         # userBalances should be equal to [1000]
         ```
