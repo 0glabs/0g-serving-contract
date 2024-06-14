@@ -44,8 +44,8 @@ describe("Upgrade DataRetrieve", () => {
         ]);
 
         await Promise.all([
-            dataRetrieve.depositFund({ value: ownerInitialBalance }),
-            dataRetrieve.connect(user1).depositFund({ value: user1InitialBalance }),
+            dataRetrieve.depositFund(provider1, { value: ownerInitialBalance }),
+            dataRetrieve.connect(user1).depositFund(provider1, { value: user1InitialBalance }),
             dataRetrieve.connect(provider1).addOrUpdateService(provider1ServiceType, provider1Price, provider1Url),
             dataRetrieve.connect(provider2).addOrUpdateService(provider2ServiceType, provider2Price, provider2Url),
         ]);
@@ -58,7 +58,8 @@ describe("Upgrade DataRetrieve", () => {
 
         const [
             userAddresses,
-            userBalances,
+            userAccountProviderAddresses,
+            userAccountBalances,
             providerAddresses,
             servicePrices,
             serviceUrls,
@@ -67,7 +68,8 @@ describe("Upgrade DataRetrieve", () => {
         ] = (await dataRetrieveV2.retrieveAllData()).map((value) => [...value]);
 
         expect(userAddresses).to.have.members([ownerAddress, user1Address]);
-        expect(userBalances).to.have.members([BigInt(ownerInitialBalance), BigInt(user1InitialBalance)]);
+        expect(userAccountProviderAddresses).to.have.members([provider1Address, provider1Address]);
+        expect(userAccountBalances).to.have.members([BigInt(ownerInitialBalance), BigInt(user1InitialBalance)]);
         expect(providerAddresses).to.have.members([provider1Address, provider2Address]);
         expect(servicePrices).to.have.members([BigInt(provider1Price), BigInt(provider2Price)]);
         expect(serviceUrls).to.have.members([provider1Url, provider2Url]);

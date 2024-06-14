@@ -3,23 +3,29 @@ pragma solidity >=0.8.0 <0.9.0;
 
 import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 import "@openzeppelin/contracts/utils/structs/EnumerableMap.sol";
-import "./User.sol";
+import "./UserAccount.sol";
 import "./Service.sol";
 import "./Request.sol";
 
 contract DataRetrieve is OwnableUpgradeable {
-    using UserLibrary for UserLibrary.UserMap;
+    using UserAccountLibrary for UserAccountLibrary.UserAccountMap;
     using ServiceLibrary for ServiceLibrary.ServiceMap;
     using RequestLibrary for Request;
 
     uint public lockTime;
-    UserLibrary.UserMap private userMap;
+    UserAccountLibrary.UserAccountMap private userAccountMap;
     ServiceLibrary.ServiceMap private serviceMap;
     mapping(bytes32 => uint) private nonceMap;
 
-    event BalanceUpdated(address indexed user, uint amount);
-    event RefundRequested(address indexed user, uint indexed index, uint amount, uint timestamp);
-    event RefundProcessed(address indexed user, uint indexed index, uint amount);
+    event BalanceUpdated(address indexed user, address indexed provider, uint amount);
+    event RefundRequested(
+        address indexed user,
+        address indexed provider,
+        uint indexed index,
+        uint amount,
+        uint timestamp
+    );
+    event RefundProcessed(address indexed user, address indexed provider, uint indexed index, uint amount);
     event ServiceUpdated(address indexed service, bytes32 indexed serviceType, uint price, string url, uint updatedAt);
     event ServiceRemoved(address indexed service, bytes32 indexed serviceType);
 
@@ -32,30 +38,35 @@ contract DataRetrieve is OwnableUpgradeable {
         lockTime = _locktime;
     }
 
-    function getUserBalance(address key) public view returns (uint) {
-        return userMap.getUser(key).balance;
+    function getUserAccountBalance(address user, address provider) public view returns (uint) {
+        return userAccountMap.getUserAccount(user, provider).balance;
     }
 
-    function getAllUsers() public view returns (address[] memory, uint[] memory) {
-        return userMap.getAllUsers();
+    function getAllUserAccounts() public view returns (address[] memory, address[] memory, uint[] memory) {
+        return userAccountMap.getAllUserAccounts();
     }
 
-    function depositFund() external payable {
-        uint balance = userMap.depositFund(msg.sender, msg.value);
-        emit BalanceUpdated(msg.sender, balance);
+    function depositFund(address provider) external payable {
+        uint balance = userAccountMap.depositFund(msg.sender, provider, msg.value);
+        emit BalanceUpdated(msg.sender, provider, balance);
     }
 
-    function requestRefund(uint amount) external {
-        uint index = userMap.requestRefund(msg.sender, amount);
-        emit RefundRequested(msg.sender, index, amount, block.timestamp);
+    function requestRefund(address provider, uint amount) external {
+        uint index = userAccountMap.requestRefund(msg.sender, provider, amount);
+        emit RefundRequested(msg.sender, provider, index, amount, block.timestamp);
     }
 
-    function processRefund(uint index) external {
-        (uint amount, uint balance, uint pendingRefund) = userMap.processRefund(msg.sender, index, lockTime);
+    function processRefund(address provider, uint index) external {
+        (uint amount, uint balance, uint pendingRefund) = userAccountMap.processRefund(
+            msg.sender,
+            provider,
+            index,
+            lockTime
+        );
 
         payable(msg.sender).transfer(amount);
-        emit RefundProcessed(msg.sender, index, pendingRefund);
-        emit BalanceUpdated(msg.sender, balance);
+        emit RefundProcessed(msg.sender, provider, index, pendingRefund);
+        emit BalanceUpdated(msg.sender, provider, balance);
     }
 
     function getService(
@@ -112,11 +123,11 @@ contract DataRetrieve is OwnableUpgradeable {
             require(updatedAt < request.createdAt, "Service updated");
             amount += price;
         }
-        User storage user = userMap.getUser(requests[0].userAddress);
+        UserAccount storage userAccount = userAccountMap.getUserAccount(requests[0].userAddress, msg.sender);
 
-        require(user.balance >= amount, "Insufficient balance");
-        user.balance -= amount;
-        emit BalanceUpdated(requests[0].userAddress, user.balance);
+        require(userAccount.balance >= amount, "Insufficient balance");
+        userAccount.balance -= amount;
+        emit BalanceUpdated(requests[0].userAddress, msg.sender, userAccount.balance);
         payable(msg.sender).transfer(amount);
     }
 }

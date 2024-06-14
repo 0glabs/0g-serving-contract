@@ -46,8 +46,8 @@ describe("DataRetrieve", () => {
         ]);
 
         const initializations: ContractTransactionResponse[] = await Promise.all([
-            dataRetrieve.depositFund({ value: ownerInitialBalance }),
-            dataRetrieve.connect(user1).depositFund({ value: user1InitialBalance }),
+            dataRetrieve.depositFund(provider1, { value: ownerInitialBalance }),
+            dataRetrieve.connect(user1).depositFund(provider1, { value: user1InitialBalance }),
             dataRetrieve.connect(provider1).addOrUpdateService(provider1ServiceType, provider1Price, provider1Url),
             dataRetrieve.connect(provider2).addOrUpdateService(provider2ServiceType, provider2Price, provider2Url),
         ]);
@@ -81,16 +81,19 @@ describe("DataRetrieve", () => {
 
         it("should deposit fund and update balance", async () => {
             const depositAmount = 1000;
-            await dataRetrieve.depositFund({ value: depositAmount });
+            await dataRetrieve.depositFund(provider1, { value: depositAmount });
 
-            const updatedBalance = await dataRetrieve.getUserBalance(ownerAddress);
+            const updatedBalance = await dataRetrieve.getUserAccountBalance(ownerAddress, provider1);
             expect(updatedBalance).to.equal(BigInt(ownerInitialBalance + depositAmount));
         });
 
         it("should get all users", async () => {
-            const [addresses, balances] = (await dataRetrieve.getAllUsers()).map((value) => [...value]);
+            const [userAddresses, providerAddresses, balances] = (await dataRetrieve.getAllUserAccounts()).map(
+                (value) => [...value]
+            );
 
-            expect(addresses).to.have.members([ownerAddress, user1Address]);
+            expect(userAddresses).to.have.members([ownerAddress, user1Address]);
+            expect(providerAddresses).to.have.members([provider1Address, provider1Address]);
             expect(balances).to.have.members([BigInt(ownerInitialBalance), BigInt(user1InitialBalance)]);
         });
     });
@@ -100,22 +103,22 @@ describe("DataRetrieve", () => {
         const refundAmount = 500;
 
         beforeEach(async () => {
-            const res = await dataRetrieve.requestRefund(refundAmount);
+            const res = await dataRetrieve.requestRefund(provider1, refundAmount);
             const receipt = await res.wait();
             const block = await ethers.provider.getBlock((receipt as TransactionReceipt).blockNumber);
             unlockTime = (block as Block).timestamp + lockTime;
-            refundIndex = (await dataRetrieve.queryFilter(dataRetrieve.filters.RefundRequested, -1))[0].args[1];
+            refundIndex = (await dataRetrieve.queryFilter(dataRetrieve.filters.RefundRequested, -1))[0].args[2];
         });
 
         it("should revert if called too soon", async () => {
-            await expect(dataRetrieve.processRefund(refundIndex)).to.be.reverted;
+            await expect(dataRetrieve.processRefund(provider1, refundIndex)).to.be.reverted;
         });
 
         it("should succeeded if the unlockTime has arrived and called", async () => {
             await time.increaseTo(unlockTime);
 
-            await expect(dataRetrieve.processRefund(refundIndex)).not.to.be.reverted;
-            const finalBalance = await dataRetrieve.getUserBalance(ownerAddress);
+            await expect(dataRetrieve.processRefund(provider1, refundIndex)).not.to.be.reverted;
+            const finalBalance = await dataRetrieve.getUserAccountBalance(ownerAddress, provider1);
             expect(finalBalance).to.be.equal(BigInt(ownerInitialBalance - refundAmount));
         });
     });
@@ -225,9 +228,9 @@ describe("DataRetrieve", () => {
         it("should succeed", async () => {
             await expect(dataRetrieve.connect(provider1).settleFees(requestTrace))
                 .to.emit(dataRetrieve, "BalanceUpdated")
-                .withArgs(ownerAddress, ownerInitialBalance - requestLength * provider1Price)
+                .withArgs(ownerAddress, provider1, ownerInitialBalance - requestLength * provider1Price)
                 .and.to.emit(dataRetrieve, "BalanceUpdated")
-                .withArgs(user1Address, user1InitialBalance - requestLength * provider1Price);
+                .withArgs(user1Address, provider1, user1InitialBalance - requestLength * provider1Price);
         });
 
         it("should failed due to double spending", async () => {
