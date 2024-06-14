@@ -9,6 +9,9 @@ struct Request {
     address userAddress;
     uint nonce;
     bytes32 serviceType;
+    uint inputCount;
+    uint previousOutputCount;
+    bytes previousSignature;
     bytes signature;
     uint createdAt;
 }
@@ -21,6 +24,9 @@ library RequestLibrary {
                     serviceProviderAddress,
                     request.userAddress,
                     request.serviceType,
+                    request.inputCount,
+                    request.previousOutputCount,
+                    request.previousSignature,
                     request.nonce,
                     request.createdAt
                 )

@@ -31,7 +31,7 @@ BEACON_ADDRESS=<old beacon address> DATA_RETRIEVE_ADDRESS=<proxy address> yarn u
 
     For example, deposit funds, update the contract, and verify the state of the new contract.
 
-    1. Deploy contract
+    1. Deploy the contract and note down the beacon and proxy addresses from the output
 
         ```shell
         yarn deploy zg
@@ -43,8 +43,8 @@ BEACON_ADDRESS=<old beacon address> DATA_RETRIEVE_ADDRESS=<proxy address> yarn u
         yarn hardhat console --network zg
         # Commands in the Hardhat console:
         const DataRetrieve = await ethers.getContractFactory("DataRetrieve")
-        const dataRetrieve = await DataRetrieve.attach("<proxy contract name>")
-        await dataRetrieve.depositFund({ value: 1000 })
+        const dataRetrieve = await DataRetrieve.attach("<proxy address>")
+        await dataRetrieve.depositFund("0x0000000000000000000000000000000000000000", { value: 1000 })
         await dataRetrieve.lockTime()
         ```
 
@@ -60,7 +60,7 @@ BEACON_ADDRESS=<old beacon address> DATA_RETRIEVE_ADDRESS=<proxy address> yarn u
         yarn hardhat console --network zg
         # Commands in the Hardhat console:
         const DataRetrieveV2 = await ethers.getContractFactory("DataRetrieveV2")
-        const dataRetrieveV2 = await DataRetrieveV2.attach("<proxy contract name>")
-        const [userAddresses,userBalances] = (await dataRetrieveV2.retrieveAllData())
-        # userBalances should be equal to [1000]
+        const dataRetrieveV2 = await DataRetrieveV2.attach("<proxy address>")
+        const [userAddresses, userAddresses,userAccountBalances] = (await dataRetrieveV2.retrieveAllData())
+        # userAccountBalances should be equal to [1000]
         ```

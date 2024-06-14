@@ -6,7 +6,8 @@ import "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
 struct Service {
     address provider;
     bytes32 serviceType;
-    uint price;
+    uint inputPrice;
+    uint outputPrice;
     string url;
     uint updatedAt;
 }
@@ -25,9 +26,9 @@ library ServiceLibrary {
         ServiceMap storage map,
         address provider,
         bytes32 serviceType
-    ) internal view returns (uint, string memory, uint) {
+    ) internal view returns (uint, uint, string memory, uint) {
         Service storage value = _get(map, provider, serviceType);
-        return (value.price, value.url, value.updatedAt);
+        return (value.inputPrice, value.outputPrice, value.url, value.updatedAt);
     }
 
     function getAllServices(
@@ -37,7 +38,8 @@ library ServiceLibrary {
         view
         returns (
             address[] memory addresses,
-            uint[] memory prices,
+            uint[] memory inputPrices,
+            uint[] memory outputPrices,
             string[] memory urls,
             bytes32[] memory serviceTypes,
             uint[] memory updatedAts
@@ -45,14 +47,16 @@ library ServiceLibrary {
     {
         uint len = _length(map);
         addresses = new address[](len);
-        prices = new uint[](len);
+        inputPrices = new uint[](len);
+        outputPrices = new uint[](len);
         urls = new string[](len);
         serviceTypes = new bytes32[](len);
         updatedAts = new uint[](len);
         for (uint i = 0; i < len; ++i) {
             Service storage value = _at(map, i);
             addresses[i] = value.provider;
-            prices[i] = value.price;
+            inputPrices[i] = value.inputPrice;
+            outputPrices[i] = value.outputPrice;
             urls[i] = value.url;
             serviceTypes[i] = value.serviceType;
             updatedAts[i] = value.updatedAt;
@@ -63,17 +67,19 @@ library ServiceLibrary {
         ServiceMap storage map,
         address provider,
         bytes32 serviceType,
-        uint price,
+        uint inputPrice,
+        uint outputPrice,
         string memory url
     ) internal {
         bytes32 key = _key(provider, serviceType);
         if (!_contains(map, key)) {
-            _set(map, key, Service(provider, serviceType, price, url, block.timestamp));
+            _set(map, key, Service(provider, serviceType, inputPrice, outputPrice, url, block.timestamp));
             return;
         }
         Service storage value = _get(map, provider, serviceType);
         value.serviceType = serviceType;
-        value.price = price;
+        value.inputPrice = inputPrice;
+        value.outputPrice = outputPrice;
         value.url = url;
         value.updatedAt = block.timestamp;
     }

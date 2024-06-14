@@ -22,11 +22,13 @@ describe("Upgrade DataRetrieve", () => {
     const lockTime = 24 * 60 * 60;
 
     const provider1ServiceType = randomBytes(32);
-    const provider1Price = 100;
+    const provider1InputPrice = 100;
+    const provider1OutputPrice = 100;
     const provider1Url = "https://example-1.com";
 
     const provider2ServiceType = randomBytes(32);
-    const provider2Price = 100;
+    const provider2InputPrice = 100;
+    const provider2OutputPrice = 100;
     const provider2Url = "https://example-2.com";
 
     beforeEach(async () => {
@@ -46,8 +48,12 @@ describe("Upgrade DataRetrieve", () => {
         await Promise.all([
             dataRetrieve.depositFund(provider1, { value: ownerInitialBalance }),
             dataRetrieve.connect(user1).depositFund(provider1, { value: user1InitialBalance }),
-            dataRetrieve.connect(provider1).addOrUpdateService(provider1ServiceType, provider1Price, provider1Url),
-            dataRetrieve.connect(provider2).addOrUpdateService(provider2ServiceType, provider2Price, provider2Url),
+            dataRetrieve
+                .connect(provider1)
+                .addOrUpdateService(provider1ServiceType, provider1InputPrice, provider1OutputPrice, provider1Url),
+            dataRetrieve
+                .connect(provider2)
+                .addOrUpdateService(provider2ServiceType, provider2InputPrice, provider2OutputPrice, provider2Url),
         ]);
     });
 
@@ -61,7 +67,8 @@ describe("Upgrade DataRetrieve", () => {
             userAccountProviderAddresses,
             userAccountBalances,
             providerAddresses,
-            servicePrices,
+            serviceInputPrices,
+            serviceOutputPrices,
             serviceUrls,
             serviceTypes,
             serviceUpdatedAts,
@@ -71,7 +78,8 @@ describe("Upgrade DataRetrieve", () => {
         expect(userAccountProviderAddresses).to.have.members([provider1Address, provider1Address]);
         expect(userAccountBalances).to.have.members([BigInt(ownerInitialBalance), BigInt(user1InitialBalance)]);
         expect(providerAddresses).to.have.members([provider1Address, provider2Address]);
-        expect(servicePrices).to.have.members([BigInt(provider1Price), BigInt(provider2Price)]);
+        expect(serviceInputPrices).to.have.members([BigInt(provider1InputPrice), BigInt(provider2InputPrice)]);
+        expect(serviceOutputPrices).to.have.members([BigInt(provider1OutputPrice), BigInt(provider2OutputPrice)]);
         expect(serviceUrls).to.have.members([provider1Url, provider2Url]);
         expect(serviceTypes).to.have.members([
             "0x" + Buffer.from(provider1ServiceType).toString("hex"),

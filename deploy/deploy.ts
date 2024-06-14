@@ -7,11 +7,11 @@ async function main() {
 
     const beacon = await upgrades.deployBeacon(DataRetrieve);
     await beacon.waitForDeployment();
-    console.log("Beacon deployed to:", await beacon.getAddress());
+    console.log("Beacon address:", await beacon.getAddress());
 
     const dataRetrieve = await upgrades.deployBeaconProxy(beacon, DataRetrieve, [lockTime]);
     await dataRetrieve.waitForDeployment();
-    console.log("DataRetrieve deployed to:", await dataRetrieve.getAddress());
+    console.log("Proxy address:", await dataRetrieve.getAddress());
 }
 
 main()
