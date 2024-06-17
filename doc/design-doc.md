@@ -42,6 +42,10 @@ Please refer to test/data-retrieve.spec.ts for test cases.
 
 ## Design
 
+### Process Diagram
+
+![Process Diagram](image/data-retrieve.png)
+
 ### Methods to Query Information on the Contract
 
 The contract provides interfaces to query `user` and `service` information. Additionally, each state change on the contract triggers an event. Therefore, there are two ways to obtain relevant information, either through local querying or directly using the contract interface based on specific service types on a case-by-case basis.
