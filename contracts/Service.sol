@@ -5,7 +5,7 @@ import "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
 
 struct Service {
     address provider;
-    bytes32 serviceType;
+    string name;
     uint inputPrice;
     uint outputPrice;
     string url;
@@ -15,7 +15,7 @@ struct Service {
 library ServiceLibrary {
     using EnumerableSet for EnumerableSet.Bytes32Set;
 
-    error ServiceNotexist(address provider, bytes32 serviceType);
+    error ServiceNotexist(address provider, string name);
 
     struct ServiceMap {
         EnumerableSet.Bytes32Set _keys;
@@ -25,9 +25,9 @@ library ServiceLibrary {
     function getService(
         ServiceMap storage map,
         address provider,
-        bytes32 serviceType
+        string memory name
     ) internal view returns (uint, uint, string memory, uint) {
-        Service storage value = _get(map, provider, serviceType);
+        Service storage value = _get(map, provider, name);
         return (value.inputPrice, value.outputPrice, value.url, value.updatedAt);
     }
 
@@ -41,7 +41,7 @@ library ServiceLibrary {
             uint[] memory inputPrices,
             uint[] memory outputPrices,
             string[] memory urls,
-            bytes32[] memory serviceTypes,
+            string[] memory names,
             uint[] memory updatedAts
         )
     {
@@ -50,7 +50,7 @@ library ServiceLibrary {
         inputPrices = new uint[](len);
         outputPrices = new uint[](len);
         urls = new string[](len);
-        serviceTypes = new bytes32[](len);
+        names = new string[](len);
         updatedAts = new uint[](len);
         for (uint i = 0; i < len; ++i) {
             Service storage value = _at(map, i);
@@ -58,7 +58,7 @@ library ServiceLibrary {
             inputPrices[i] = value.inputPrice;
             outputPrices[i] = value.outputPrice;
             urls[i] = value.url;
-            serviceTypes[i] = value.serviceType;
+            names[i] = value.name;
             updatedAts[i] = value.updatedAt;
         }
     }
@@ -66,28 +66,28 @@ library ServiceLibrary {
     function addOrUpdateService(
         ServiceMap storage map,
         address provider,
-        bytes32 serviceType,
+        string memory name,
         uint inputPrice,
         uint outputPrice,
         string memory url
     ) internal {
-        bytes32 key = _key(provider, serviceType);
+        bytes32 key = _key(provider, name);
         if (!_contains(map, key)) {
-            _set(map, key, Service(provider, serviceType, inputPrice, outputPrice, url, block.timestamp));
+            _set(map, key, Service(provider, name, inputPrice, outputPrice, url, block.timestamp));
             return;
         }
-        Service storage value = _get(map, provider, serviceType);
-        value.serviceType = serviceType;
+        Service storage value = _get(map, provider, name);
+        value.name = name;
         value.inputPrice = inputPrice;
         value.outputPrice = outputPrice;
         value.url = url;
         value.updatedAt = block.timestamp;
     }
 
-    function removeService(ServiceMap storage map, address provider, bytes32 serviceType) internal {
-        bytes32 key = _key(provider, serviceType);
+    function removeService(ServiceMap storage map, address provider, string memory name) internal {
+        bytes32 key = _key(provider, name);
         if (!_contains(map, key)) {
-            revert ServiceNotexist(provider, serviceType);
+            revert ServiceNotexist(provider, name);
         }
         _remove(map, key);
     }
@@ -105,12 +105,12 @@ library ServiceLibrary {
     function _get(
         ServiceMap storage map,
         address provider,
-        bytes32 serviceType
+        string memory name
     ) internal view returns (Service storage) {
-        bytes32 key = _key(provider, serviceType);
+        bytes32 key = _key(provider, name);
         Service storage value = map._values[key];
         if (!_contains(map, key)) {
-            revert ServiceNotexist(provider, serviceType);
+            revert ServiceNotexist(provider, name);
         }
         return value;
     }
@@ -128,7 +128,7 @@ library ServiceLibrary {
         return map._keys.length();
     }
 
-    function _key(address provider, bytes32 serviceType) internal pure returns (bytes32) {
-        return keccak256(abi.encode(provider, serviceType));
+    function _key(address provider, string memory name) internal pure returns (bytes32) {
+        return keccak256(abi.encode(provider, name));
     }
 }

@@ -2,7 +2,7 @@ import { anyValue } from "@nomicfoundation/hardhat-chai-matchers/withArgs";
 import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
 import { time } from "@nomicfoundation/hardhat-toolbox/network-helpers";
 import { expect } from "chai";
-import { Block, BytesLike, ContractTransactionResponse, randomBytes, TransactionReceipt } from "ethers";
+import { Block, BytesLike, ContractTransactionResponse, TransactionReceipt } from "ethers";
 import { ethers, upgrades } from "hardhat";
 import { beforeEach } from "mocha";
 import { DataRetrieve, DataRetrieve__factory } from "../typechain-types";
@@ -21,12 +21,12 @@ describe("DataRetrieve", () => {
     const user1InitialBalance = 2000;
     const lockTime = 24 * 60 * 60;
 
-    const provider1ServiceType = randomBytes(32);
+    const provider1Name = "test-provider-1";
     const provider1InputPrice = 100;
     const provider1OutputPrice = 100;
     const provider1Url = "https://example-1.com";
 
-    const provider2ServiceType = randomBytes(32);
+    const provider2Name = "test-provider-2";
     const provider2InputPrice = 100;
     const provider2OutputPrice = 100;
     const provider2Url = "https://example-2.com";
@@ -52,10 +52,10 @@ describe("DataRetrieve", () => {
             dataRetrieve.connect(user1).depositFund(provider1Address, { value: user1InitialBalance }),
             dataRetrieve
                 .connect(provider1)
-                .addOrUpdateService(provider1ServiceType, provider1InputPrice, provider1OutputPrice, provider1Url),
+                .addOrUpdateService(provider1Name, provider1InputPrice, provider1OutputPrice, provider1Url),
             dataRetrieve
                 .connect(provider2)
-                .addOrUpdateService(provider2ServiceType, provider2InputPrice, provider2OutputPrice, provider2Url),
+                .addOrUpdateService(provider2Name, provider2InputPrice, provider2OutputPrice, provider2Url),
         ]);
 
         const receipt = await initializations[2].wait();
@@ -133,7 +133,7 @@ describe("DataRetrieve", () => {
         it("should get service", async () => {
             const [retrievedInputPrice, retrievedOutputPrice, retrievedUrl, updatedAt] = await dataRetrieve.getService(
                 provider1Address,
-                provider1ServiceType
+                provider1Name
             );
 
             expect(retrievedInputPrice).to.equal(provider1InputPrice);
@@ -143,7 +143,7 @@ describe("DataRetrieve", () => {
         });
 
         it("should get all services", async () => {
-            const [addresses, inputPrices, outputPrices, urls, serviceTypes, updatedAts] = (
+            const [addresses, inputPrices, outputPrices, urls, names, updatedAts] = (
                 await dataRetrieve.getAllServices()
             ).map((value) => [...value]);
 
@@ -151,10 +151,7 @@ describe("DataRetrieve", () => {
             expect(inputPrices).to.have.members([BigInt(provider1InputPrice), BigInt(provider2InputPrice)]);
             expect(outputPrices).to.have.members([BigInt(provider1OutputPrice), BigInt(provider2OutputPrice)]);
             expect(urls).to.have.members([provider1Url, provider2Url]);
-            expect(serviceTypes).to.have.members([
-                "0x" + Buffer.from(provider1ServiceType).toString("hex"),
-                "0x" + Buffer.from(provider2ServiceType).toString("hex"),
-            ]);
+            expect(names).to.have.members([provider1Name, provider2Name]);
             expect(updatedAts[0]).to.not.equal(0);
             expect(updatedAts[1]).to.not.equal(0);
         });
@@ -166,12 +163,12 @@ describe("DataRetrieve", () => {
             await expect(
                 dataRetrieve
                     .connect(provider1)
-                    .addOrUpdateService(provider1ServiceType, modifiedInputPrice, provider2InputPrice, modifiedPriceUrl)
+                    .addOrUpdateService(provider1Name, modifiedInputPrice, provider2InputPrice, modifiedPriceUrl)
             )
                 .to.emit(dataRetrieve, "ServiceUpdated")
                 .withArgs(
                     provider1Address,
-                    "0x" + Buffer.from(provider1ServiceType).toString("hex"),
+                    "0x" + Buffer.from(provider1Name).toString("hex"),
                     modifiedInputPrice,
                     provider2InputPrice,
                     modifiedPriceUrl,
@@ -180,7 +177,7 @@ describe("DataRetrieve", () => {
 
             const [retrievedInputPrice, , retrievedUrl, updatedAt] = await dataRetrieve.getService(
                 provider1Address,
-                provider1ServiceType
+                provider1Name
             );
 
             expect(retrievedInputPrice).to.equal(modifiedInputPrice);
@@ -189,9 +186,9 @@ describe("DataRetrieve", () => {
         });
 
         it("should remove service correctly", async function () {
-            await expect(dataRetrieve.connect(provider1).removeService(provider1ServiceType))
+            await expect(dataRetrieve.connect(provider1).removeService(provider1Name))
                 .to.emit(dataRetrieve, "ServiceRemoved")
-                .withArgs(provider1Address, "0x" + Buffer.from(provider1ServiceType).toString("hex"));
+                .withArgs(provider1Address, "0x" + Buffer.from(provider1Name).toString("hex"));
 
             const [addresses] = await dataRetrieve.getAllServices();
             expect(addresses.length).to.equal(1);
@@ -217,7 +214,7 @@ describe("DataRetrieve", () => {
                     owner,
                     ownerAddress,
                     provider1Address,
-                    provider1ServiceType,
+                    provider1Name,
                     inputCount,
                     outputCount,
                     requestCreatedAt,
@@ -234,7 +231,7 @@ describe("DataRetrieve", () => {
                     user1,
                     user1Address,
                     provider1Address,
-                    provider1ServiceType,
+                    provider1Name,
                     inputCount,
                     outputCount,
                     requestCreatedAt,
@@ -275,7 +272,7 @@ describe("DataRetrieve", () => {
             const modifiedInputPrice = 10000;
             const tx = await dataRetrieve
                 .connect(provider1)
-                .addOrUpdateService(provider1ServiceType, modifiedInputPrice, provider1OutputPrice, provider1Url);
+                .addOrUpdateService(provider1Name, modifiedInputPrice, provider1OutputPrice, provider1Url);
             await tx.wait();
 
             await expect(dataRetrieve.connect(provider1).settleFees(requestTrace)).to.be.revertedWith(
@@ -292,7 +289,7 @@ describe("DataRetrieve", () => {
                     user1,
                     user1Address,
                     provider1Address,
-                    provider1ServiceType,
+                    provider1Name,
                     inputCount,
                     outputCount,
                     requestCreatedAt,
@@ -315,7 +312,7 @@ async function getSignedRequest(
     signer: HardhatEthersSigner,
     userAddress: string,
     provider: string,
-    serviceType: Uint8Array,
+    name: string,
     inputCount: number,
     previousOutputCount: number,
     createdAt: number,
@@ -323,15 +320,15 @@ async function getSignedRequest(
     nonce: number
 ): Promise<RequestStruct> {
     const hash = ethers.solidityPackedKeccak256(
-        ["address", "address", "bytes32", "uint", "uint", "bytes", "uint", "uint"],
-        [provider, userAddress, serviceType, inputCount, previousOutputCount, previousSignature, nonce, createdAt]
+        ["address", "address", "string", "uint", "uint", "bytes", "uint", "uint"],
+        [provider, userAddress, name, inputCount, previousOutputCount, previousSignature, nonce, createdAt]
     );
 
     const signature = await signer.signMessage(ethers.toBeArray(hash));
 
     return {
         userAddress,
-        serviceType,
+        name,
         inputCount,
         previousOutputCount,
         createdAt,

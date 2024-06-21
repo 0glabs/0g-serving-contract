@@ -28,13 +28,13 @@ contract DataRetrieve is OwnableUpgradeable {
     event RefundProcessed(address indexed user, address indexed provider, uint indexed index, uint amount);
     event ServiceUpdated(
         address indexed service,
-        bytes32 indexed serviceType,
+        string indexed name,
         uint inputPrice,
         uint outputPrice,
         string url,
         uint updatedAt
     );
-    event ServiceRemoved(address indexed service, bytes32 indexed serviceType);
+    event ServiceRemoved(address indexed service, string indexed name);
 
     function initialize(uint _locktime) public initializer {
         __Ownable_init(msg.sender);
@@ -78,9 +78,9 @@ contract DataRetrieve is OwnableUpgradeable {
 
     function getService(
         address provider,
-        bytes32 serviceType
+        string memory name
     ) public view returns (uint inputPrice, uint outputPrice, string memory url, uint updatedAt) {
-        (inputPrice, outputPrice, url, updatedAt) = serviceMap.getService(provider, serviceType);
+        (inputPrice, outputPrice, url, updatedAt) = serviceMap.getService(provider, name);
     }
 
     function getAllServices()
@@ -91,21 +91,21 @@ contract DataRetrieve is OwnableUpgradeable {
             uint[] memory inputPrices,
             uint[] memory outputPrices,
             string[] memory urls,
-            bytes32[] memory serviceTypes,
+            string[] memory names,
             uint[] memory updatedAts
         )
     {
-        (addresses, inputPrices, outputPrices, urls, serviceTypes, updatedAts) = serviceMap.getAllServices();
+        (addresses, inputPrices, outputPrices, urls, names, updatedAts) = serviceMap.getAllServices();
     }
 
-    function addOrUpdateService(bytes32 serviceType, uint inputPrice, uint outputPrice, string calldata url) external {
-        serviceMap.addOrUpdateService(msg.sender, serviceType, inputPrice, outputPrice, url);
-        emit ServiceUpdated(msg.sender, serviceType, inputPrice, outputPrice, url, block.timestamp);
+    function addOrUpdateService(string memory name, uint inputPrice, uint outputPrice, string calldata url) external {
+        serviceMap.addOrUpdateService(msg.sender, name, inputPrice, outputPrice, url);
+        emit ServiceUpdated(msg.sender, name, inputPrice, outputPrice, url, block.timestamp);
     }
 
-    function removeService(bytes32 serviceType) external {
-        serviceMap.removeService(msg.sender, serviceType);
-        emit ServiceRemoved(msg.sender, serviceType);
+    function removeService(string memory name) external {
+        serviceMap.removeService(msg.sender, name);
+        emit ServiceRemoved(msg.sender, name);
     }
 
     function settleFees(RequestTrace[] memory traces) external {
@@ -130,10 +130,7 @@ contract DataRetrieve is OwnableUpgradeable {
             require(request.verify(msg.sender), "Invalid request");
             previousSignature = request.signature;
 
-            (uint inputPrice, uint outputPrice, , uint updatedAt) = serviceMap.getService(
-                msg.sender,
-                request.serviceType
-            );
+            (uint inputPrice, uint outputPrice, , uint updatedAt) = serviceMap.getService(msg.sender, request.name);
             require(updatedAt < request.createdAt, "Service updated");
             amount += request.inputCount * inputPrice;
             amount += request.previousOutputCount * outputPrice;
