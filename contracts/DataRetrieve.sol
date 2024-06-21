@@ -145,4 +145,8 @@ contract DataRetrieve is OwnableUpgradeable {
         emit BalanceUpdated(requests[0].userAddress, msg.sender, userAccount.balance);
         payable(msg.sender).transfer(amount);
     }
+
+    function verify(Request memory request) external view returns (bool) {
+        return request.verify(msg.sender);
+    }
 }
