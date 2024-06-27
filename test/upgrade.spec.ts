@@ -3,14 +3,11 @@ import { expect } from "chai";
 import { Contract } from "ethers";
 import { ethers, upgrades } from "hardhat";
 import { beforeEach } from "mocha";
-import { DataRetrieve, DataRetrieveV2, DataRetrieveV2__factory, DataRetrieve__factory } from "../typechain-types";
+import { Serving, ServingV2, ServingV2__factory, Serving__factory } from "../typechain-types";
 
-describe("Upgrade DataRetrieve", () => {
+describe("Upgrade Serving", () => {
     let beacon: Contract;
-    let DataRetrieve: DataRetrieve__factory,
-        DataRetrieveV2: DataRetrieveV2__factory,
-        dataRetrieve: DataRetrieve,
-        dataRetrieveV2: DataRetrieveV2;
+    let Serving: Serving__factory, ServingV2: ServingV2__factory, serving: Serving, servingV2: ServingV2;
     let owner: HardhatEthersSigner,
         user1: HardhatEthersSigner,
         provider1: HardhatEthersSigner,
@@ -33,10 +30,10 @@ describe("Upgrade DataRetrieve", () => {
 
     beforeEach(async () => {
         [owner, user1, provider1, provider2] = await ethers.getSigners();
-        DataRetrieve = await ethers.getContractFactory("DataRetrieve");
+        Serving = await ethers.getContractFactory("Serving");
 
-        beacon = await upgrades.deployBeacon(DataRetrieve);
-        dataRetrieve = (await upgrades.deployBeaconProxy(beacon, DataRetrieve, [lockTime])) as unknown as DataRetrieve;
+        beacon = await upgrades.deployBeacon(Serving);
+        serving = (await upgrades.deployBeaconProxy(beacon, Serving, [lockTime])) as unknown as Serving;
 
         [ownerAddress, user1Address, provider1Address, provider2Address] = await Promise.all([
             owner.getAddress(),
@@ -46,21 +43,21 @@ describe("Upgrade DataRetrieve", () => {
         ]);
 
         await Promise.all([
-            dataRetrieve.depositFund(provider1, { value: ownerInitialBalance }),
-            dataRetrieve.connect(user1).depositFund(provider1, { value: user1InitialBalance }),
-            dataRetrieve
+            serving.depositFund(provider1, { value: ownerInitialBalance }),
+            serving.connect(user1).depositFund(provider1, { value: user1InitialBalance }),
+            serving
                 .connect(provider1)
                 .addOrUpdateService(provider1Name, provider1InputPrice, provider1OutputPrice, provider1Url),
-            dataRetrieve
+            serving
                 .connect(provider2)
                 .addOrUpdateService(provider2Name, provider2InputPrice, provider2OutputPrice, provider2Url),
         ]);
     });
 
     it("should succeed in getting status set by old contract", async () => {
-        DataRetrieveV2 = (await ethers.getContractFactory("DataRetrieveV2")) as unknown as DataRetrieveV2__factory;
-        await upgrades.upgradeBeacon(beacon, DataRetrieveV2);
-        dataRetrieveV2 = DataRetrieveV2.attach(await dataRetrieve.getAddress()) as unknown as DataRetrieveV2;
+        ServingV2 = (await ethers.getContractFactory("ServingV2")) as unknown as ServingV2__factory;
+        await upgrades.upgradeBeacon(beacon, ServingV2);
+        servingV2 = ServingV2.attach(await serving.getAddress()) as unknown as ServingV2;
 
         const [
             userAddresses,
@@ -72,7 +69,7 @@ describe("Upgrade DataRetrieve", () => {
             serviceUrls,
             names,
             serviceUpdatedAts,
-        ] = (await dataRetrieveV2.retrieveAllData()).map((value) => [...value]);
+        ] = (await servingV2.getAllData()).map((value) => [...value]);
 
         expect(userAddresses).to.have.members([ownerAddress, user1Address]);
         expect(userAccountProviderAddresses).to.have.members([provider1Address, provider1Address]);

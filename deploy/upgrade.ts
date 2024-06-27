@@ -1,20 +1,20 @@
 import { ethers, upgrades } from "hardhat";
 
 const beaconAddress = process.env["BEACON_ADDRESS"] || "";
-const dataRetrieveAddress = process.env["DATA_RETRIEVE_ADDRESS"] || "";
+const servingAddress = process.env["SERVING_ADDRESS"] || "";
 
 if (!beaconAddress) {
     throw new Error("BEACON_ADDRESS unset");
 }
 
-if (!dataRetrieveAddress) {
-    throw new Error("DATA_RETRIEVE_ADDRESS unset");
+if (!servingAddress) {
+    throw new Error("SERVING_ADDRESS unset");
 }
 
 async function main() {
-    const DataRetrieveV2 = await ethers.getContractFactory("DataRetrieveV2");
-    await upgrades.upgradeBeacon(beaconAddress, DataRetrieveV2);
-    await DataRetrieveV2.attach(dataRetrieveAddress);
+    const ServingV2 = await ethers.getContractFactory("ServingV2");
+    await upgrades.upgradeBeacon(beaconAddress, ServingV2);
+    await ServingV2.attach(servingAddress);
 }
 
 main()

@@ -8,10 +8,9 @@ struct RequestTrace {
 struct Request {
     address userAddress;
     uint nonce;
-    string name;
+    string serviceName;
     uint inputCount;
     uint previousOutputCount;
-    bytes previousSignature;
     bytes signature;
     uint createdAt;
 }
@@ -23,10 +22,9 @@ library RequestLibrary {
                 abi.encodePacked(
                     serviceProviderAddress,
                     request.userAddress,
-                    request.name,
+                    request.serviceName,
                     request.inputCount,
                     request.previousOutputCount,
-                    request.previousSignature,
                     request.nonce,
                     request.createdAt
                 )

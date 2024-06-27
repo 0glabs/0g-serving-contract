@@ -7,7 +7,7 @@ import "../UserAccount.sol";
 import "../Service.sol";
 import "../Request.sol";
 
-contract DataRetrieveV2 is OwnableUpgradeable {
+contract ServingV2 is OwnableUpgradeable {
     using UserAccountLibrary for UserAccountLibrary.UserAccountMap;
     using ServiceLibrary for ServiceLibrary.ServiceMap;
     using RequestLibrary for Request;
@@ -118,7 +118,6 @@ contract DataRetrieveV2 is OwnableUpgradeable {
     function _settleFees(Request[] memory requests) internal {
         require(requests.length > 0, "Empty request trace");
         uint amount = 0;
-        bytes memory previousSignature = hex"0000000000000000000000000000000000000000";
         for (uint i = 0; i < requests.length; i++) {
             Request memory request = requests[i];
 
@@ -126,11 +125,12 @@ contract DataRetrieveV2 is OwnableUpgradeable {
             require(request.nonce > nonceMap[key], "Nonce used");
             nonceMap[key] = request.nonce;
 
-            request.previousSignature = previousSignature;
             require(request.verify(msg.sender), "Invalid request");
-            previousSignature = request.signature;
 
-            (uint inputPrice, uint outputPrice, , uint updatedAt) = serviceMap.getService(msg.sender, request.name);
+            (uint inputPrice, uint outputPrice, , uint updatedAt) = serviceMap.getService(
+                msg.sender,
+                request.serviceName
+            );
             require(updatedAt < request.createdAt, "Service updated");
             amount += request.inputCount * inputPrice;
             amount += request.previousOutputCount * outputPrice;
@@ -147,7 +147,7 @@ contract DataRetrieveV2 is OwnableUpgradeable {
         return request.verify(msg.sender);
     }
 
-    function retrieveAllData()
+    function getAllData()
         public
         view
         returns (

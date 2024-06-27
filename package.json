@@ -1,5 +1,5 @@
 {
-    "name": "0g-data-retrieve-contract",
+    "name": "0g-serving-contract",
     "version": "1.0.0",
     "license": "MIT",
     "scripts": {

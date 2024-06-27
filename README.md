@@ -1,4 +1,4 @@
-# 0G Data Retrieve Contract
+# 0G Serving Contract
 
 ## Compile
 
@@ -16,7 +16,7 @@ yarn deploy zg
 ## Upgrade
 
 ```shell
-BEACON_ADDRESS=<old beacon address> DATA_RETRIEVE_ADDRESS=<proxy address> yarn upgradeBeacon zg
+BEACON_ADDRESS=<old beacon address> SERVING_ADDRESS=<proxy address> yarn upgradeBeacon zg
 ```
 
 ## Test
@@ -42,16 +42,16 @@ BEACON_ADDRESS=<old beacon address> DATA_RETRIEVE_ADDRESS=<proxy address> yarn u
         ```shell
         yarn hardhat console --network zg
         # Commands in the Hardhat console:
-        const DataRetrieve = await ethers.getContractFactory("DataRetrieve")
-        const dataRetrieve = await DataRetrieve.attach("<proxy address>")
-        await dataRetrieve.depositFund("0x0000000000000000000000000000000000000000", { value: 1000 })
-        await dataRetrieve.lockTime()
+        const Serving = await ethers.getContractFactory("Serving")
+        const serving = await Serving.attach("<proxy address>")
+        await serving.depositFund("0x0000000000000000000000000000000000000000", { value: 1000 })
+        await serving.lockTime()
         ```
 
     3. Upgrade the contract
 
         ```shell
-        BEACON_ADDRESS=<old beacon address> DATA_RETRIEVE_ADDRESS=<proxy address> yarn upgradeBeacon zg
+        BEACON_ADDRESS=<old beacon address> SERVING_ADDRESS=<proxy address> yarn upgradeBeacon zg
         ```
 
     4. Re-enter the Hardhat console and check the contract states:
@@ -59,8 +59,8 @@ BEACON_ADDRESS=<old beacon address> DATA_RETRIEVE_ADDRESS=<proxy address> yarn u
         ```shell
         yarn hardhat console --network zg
         # Commands in the Hardhat console:
-        const DataRetrieveV2 = await ethers.getContractFactory("DataRetrieveV2")
-        const dataRetrieveV2 = await DataRetrieveV2.attach("<proxy address>")
-        const [userAddresses, userAddresses,userAccountBalances] = (await dataRetrieveV2.retrieveAllData())
+        const servingV2 = await ethers.getContractFactory("ServingV2")
+        const servingV2 = await servingV2.attach("<proxy address>")
+        const [userAddresses, userAddresses,userAccountBalances] = (await servingV2.getAllData())
         # userAccountBalances should be equal to [1000]
         ```

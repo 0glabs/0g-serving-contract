@@ -1,4 +1,4 @@
-# Data Retrieve Contract
+# 0G Serving Contract
 
 ## Objective
 
@@ -34,17 +34,17 @@ The contract facilitates interactions between `user` and `service provider` to a
 
 ## What Not to Do
 
-1. Do not include the validation process for `user` to retrieve data.
+1. Do not include the validation process for `user` to get data.
 
 ## Test Cases
 
-Please refer to test/data-retrieve.spec.ts for test cases.
+Please refer to test/serving.spec.ts for test cases.
 
 ## Design
 
 ### Process Diagram
 
-![Process Diagram](image/data-retrieve.png)
+![Process Diagram](image/zg-serving.png)
 
 ### Methods to Query Information on the Contract
 
@@ -86,7 +86,7 @@ The nonce serves to identify each `request` to prevent duplicate settlements.
 
 ## Contract Code
 
-### DataRetrieve.sol
+### Serving.sol
 
 1. Contains external interfaces supporting various operations listed in [What to Do](#what-to-do).
 2. Stores variables of storage type: lockTime, userMap, serviceMap, nonceMap, representing "refund time window," user information, service information, and settlement request nonce information respectively. These variables hold the contract's state.
