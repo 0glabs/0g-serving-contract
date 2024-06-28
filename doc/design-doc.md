@@ -73,9 +73,9 @@ The contract provides interfaces to query `user` and `service` information. Addi
 
 The nonce serves to identify each `request` to prevent duplicate settlements.
 
-1. The contract maintains a nonceMap for each group of `user` and `service provider`. The key is hex(user_address, provider_address), and the value is an increasing integer.
-2. The nonce in each `request` needs to be _greater than_ the stored nonce on the nonceMap to be considered valid.
-3. After each `request` settlement, update the corresponding nonce on the nonceMap.
+1. The UserAccount structure in contract maintains a nonce field for each group of `user` and `service provider`.
+2. The nonce in each `request` needs to be _greater than_ the stored nonce on the nonce field to be considered valid.
+3. After each `request` settlement, update the corresponding nonce field.
 4. Following the rules above, the `user` client ensures to send requests with increasing nonces, and the `service provider` server confirms upon receiving requests.
 5. Other considered alternative solutions are discussed in [Nonce Maintenance](#nonce-maintenance)
 
@@ -89,7 +89,7 @@ The nonce serves to identify each `request` to prevent duplicate settlements.
 ### Serving.sol
 
 1. Contains external interfaces supporting various operations listed in [What to Do](#what-to-do).
-2. Stores variables of storage type: lockTime, userMap, serviceMap, nonceMap, representing "refund time window," user information, service information, and settlement request nonce information respectively. These variables hold the contract's state.
+2. Stores variables of storage type: lockTime, userMap, serviceMap, representing "refund time window," user information, service information, and settlement request nonce information respectively. These variables hold the contract's state.
 
 ### User.sol
 

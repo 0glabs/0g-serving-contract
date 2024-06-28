@@ -6,6 +6,7 @@ import "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
 struct UserAccount {
     address user;
     address provider;
+    uint nonce;
     uint balance;
     uint pendingRefund;
     Refund[] refunds;

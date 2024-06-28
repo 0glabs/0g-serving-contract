@@ -15,7 +15,6 @@ contract ServingV2 is OwnableUpgradeable {
     uint public lockTime;
     UserAccountLibrary.UserAccountMap private userAccountMap;
     ServiceLibrary.ServiceMap private serviceMap;
-    mapping(bytes32 => uint) private nonceMap;
 
     event BalanceUpdated(address indexed user, address indexed provider, uint amount);
     event RefundRequested(
@@ -130,12 +129,12 @@ contract ServingV2 is OwnableUpgradeable {
     function _settleFees(Request[] memory requests) internal {
         require(requests.length > 0, "Empty request trace");
         uint amount = 0;
+        UserAccount storage userAccount = userAccountMap.getUserAccount(requests[0].userAddress, msg.sender);
         for (uint i = 0; i < requests.length; i++) {
             Request memory request = requests[i];
 
-            bytes32 key = keccak256(abi.encode(request.userAddress, msg.sender));
-            require(request.nonce > nonceMap[key], "Nonce used");
-            nonceMap[key] = request.nonce;
+            require(request.nonce > userAccount.nonce, "Nonce used");
+            userAccount.nonce = request.nonce;
 
             require(request.verify(msg.sender), "Invalid request");
 
@@ -147,7 +146,6 @@ contract ServingV2 is OwnableUpgradeable {
             amount += request.inputCount * inputPrice;
             amount += request.previousOutputCount * outputPrice;
         }
-        UserAccount storage userAccount = userAccountMap.getUserAccount(requests[0].userAddress, msg.sender);
 
         require(userAccount.balance >= amount, "Insufficient balance");
         userAccount.balance -= amount;
