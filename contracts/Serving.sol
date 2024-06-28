@@ -29,9 +29,10 @@ contract Serving is OwnableUpgradeable {
     event ServiceUpdated(
         address indexed service,
         string indexed name,
+        string serviceType,
+        string url,
         uint inputPrice,
         uint outputPrice,
-        string url,
         uint updatedAt
     );
     event ServiceRemoved(address indexed service, string indexed name);
@@ -79,8 +80,12 @@ contract Serving is OwnableUpgradeable {
     function getService(
         address provider,
         string memory name
-    ) public view returns (uint inputPrice, uint outputPrice, string memory url, uint updatedAt) {
-        (inputPrice, outputPrice, url, updatedAt) = serviceMap.getService(provider, name);
+    )
+        public
+        view
+        returns (string memory serviceType, string memory url, uint inputPrice, uint outputPrice, uint updatedAt)
+    {
+        (serviceType, url, inputPrice, outputPrice, updatedAt) = serviceMap.getService(provider, name);
     }
 
     function getAllServices()
@@ -88,19 +93,26 @@ contract Serving is OwnableUpgradeable {
         view
         returns (
             address[] memory addresses,
+            string[] memory names,
+            string[] memory serviceTypes,
+            string[] memory urls,
             uint[] memory inputPrices,
             uint[] memory outputPrices,
-            string[] memory urls,
-            string[] memory names,
             uint[] memory updatedAts
         )
     {
-        (addresses, inputPrices, outputPrices, urls, names, updatedAts) = serviceMap.getAllServices();
+        (addresses, names, serviceTypes, urls, inputPrices, outputPrices, updatedAts) = serviceMap.getAllServices();
     }
 
-    function addOrUpdateService(string memory name, uint inputPrice, uint outputPrice, string calldata url) external {
-        serviceMap.addOrUpdateService(msg.sender, name, inputPrice, outputPrice, url);
-        emit ServiceUpdated(msg.sender, name, inputPrice, outputPrice, url, block.timestamp);
+    function addOrUpdateService(
+        string memory name,
+        string memory serviceType,
+        string calldata url,
+        uint inputPrice,
+        uint outputPrice
+    ) external {
+        serviceMap.addOrUpdateService(msg.sender, name, serviceType, url, inputPrice, outputPrice);
+        emit ServiceUpdated(msg.sender, name, serviceType, url, inputPrice, outputPrice, block.timestamp);
     }
 
     function removeService(string memory name) external {
@@ -127,7 +139,7 @@ contract Serving is OwnableUpgradeable {
 
             require(request.verify(msg.sender), "Invalid request");
 
-            (uint inputPrice, uint outputPrice, , uint updatedAt) = serviceMap.getService(
+            (, , uint inputPrice, uint outputPrice, uint updatedAt) = serviceMap.getService(
                 msg.sender,
                 request.serviceName
             );

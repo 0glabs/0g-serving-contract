@@ -19,11 +19,13 @@ describe("Upgrade Serving", () => {
     const lockTime = 24 * 60 * 60;
 
     const provider1Name = "test-provider-1";
+    const provider1Type = "HTTP";
     const provider1InputPrice = 100;
     const provider1OutputPrice = 100;
     const provider1Url = "https://example-1.com";
 
     const provider2Name = "test-provider-2";
+    const provider2Type = "HTTP";
     const provider2InputPrice = 100;
     const provider2OutputPrice = 100;
     const provider2Url = "https://example-2.com";
@@ -47,10 +49,22 @@ describe("Upgrade Serving", () => {
             serving.connect(user1).depositFund(provider1, { value: user1InitialBalance }),
             serving
                 .connect(provider1)
-                .addOrUpdateService(provider1Name, provider1InputPrice, provider1OutputPrice, provider1Url),
+                .addOrUpdateService(
+                    provider1Name,
+                    provider1Type,
+                    provider1Url,
+                    provider1InputPrice,
+                    provider1OutputPrice
+                ),
             serving
                 .connect(provider2)
-                .addOrUpdateService(provider2Name, provider2InputPrice, provider2OutputPrice, provider2Url),
+                .addOrUpdateService(
+                    provider2Name,
+                    provider2Type,
+                    provider2Url,
+                    provider2InputPrice,
+                    provider2OutputPrice
+                ),
         ]);
     });
 
@@ -64,10 +78,11 @@ describe("Upgrade Serving", () => {
             userAccountProviderAddresses,
             userAccountBalances,
             providerAddresses,
+            serviceNames,
+            serviceTypes,
+            serviceUrls,
             serviceInputPrices,
             serviceOutputPrices,
-            serviceUrls,
-            names,
             serviceUpdatedAts,
         ] = (await servingV2.getAllData()).map((value) => [...value]);
 
@@ -75,10 +90,11 @@ describe("Upgrade Serving", () => {
         expect(userAccountProviderAddresses).to.have.members([provider1Address, provider1Address]);
         expect(userAccountBalances).to.have.members([BigInt(ownerInitialBalance), BigInt(user1InitialBalance)]);
         expect(providerAddresses).to.have.members([provider1Address, provider2Address]);
+        expect(serviceNames).to.have.members([provider1Name, provider2Name]);
+        expect(serviceTypes).to.have.members([provider1Type, provider2Type]);
+        expect(serviceUrls).to.have.members([provider1Url, provider2Url]);
         expect(serviceInputPrices).to.have.members([BigInt(provider1InputPrice), BigInt(provider2InputPrice)]);
         expect(serviceOutputPrices).to.have.members([BigInt(provider1OutputPrice), BigInt(provider2OutputPrice)]);
-        expect(serviceUrls).to.have.members([provider1Url, provider2Url]);
-        expect(names).to.have.members([provider1Name, provider2Name]);
         expect(serviceUpdatedAts[0]).to.not.equal(0);
         expect(serviceUpdatedAts[1]).to.not.equal(0);
     });

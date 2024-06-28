@@ -21,12 +21,14 @@ describe("Serving", () => {
     const user1InitialBalance = 2000;
     const lockTime = 24 * 60 * 60;
 
-    const provider1Name = "test-provider-1";
+    const provider1ServiceName = "test-provider-1";
+    const provider1ServiceType = "HTTP";
     const provider1InputPrice = 100;
     const provider1OutputPrice = 100;
     const provider1Url = "https://example-1.com";
 
-    const provider2Name = "test-provider-2";
+    const provider2ServiceName = "test-provider-2";
+    const provider2ServiceType = "HTTP";
     const provider2InputPrice = 100;
     const provider2OutputPrice = 100;
     const provider2Url = "https://example-2.com";
@@ -52,10 +54,22 @@ describe("Serving", () => {
             serving.connect(user1).depositFund(provider1Address, { value: user1InitialBalance }),
             serving
                 .connect(provider1)
-                .addOrUpdateService(provider1Name, provider1InputPrice, provider1OutputPrice, provider1Url),
+                .addOrUpdateService(
+                    provider1ServiceName,
+                    provider1ServiceType,
+                    provider1Url,
+                    provider1InputPrice,
+                    provider1OutputPrice
+                ),
             serving
                 .connect(provider2)
-                .addOrUpdateService(provider2Name, provider2InputPrice, provider2OutputPrice, provider2Url),
+                .addOrUpdateService(
+                    provider2ServiceName,
+                    provider2ServiceType,
+                    provider2Url,
+                    provider2InputPrice,
+                    provider2OutputPrice
+                ),
         ]);
 
         const receipt = await initializations[2].wait();
@@ -131,58 +145,77 @@ describe("Serving", () => {
 
     describe("Service provider", () => {
         it("should get service", async () => {
-            const [inputPrice, outputPrice, url, updatedAt] = await serving.getService(provider1Address, provider1Name);
+            const [serviceType, url, inputPrice, outputPrice, updatedAt] = await serving.getService(
+                provider1Address,
+                provider1ServiceName
+            );
 
+            expect(serviceType).to.equal(provider1ServiceType);
+            expect(url).to.equal(provider1Url);
             expect(inputPrice).to.equal(provider1InputPrice);
             expect(outputPrice).to.equal(provider1OutputPrice);
-            expect(url).to.equal(provider1Url);
             expect(updatedAt).to.not.equal(0);
         });
 
         it("should get all services", async () => {
-            const [addresses, inputPrices, outputPrices, urls, names, updatedAts] = (
+            const [addresses, names, serviceTypes, urls, inputPrices, outputPrices, updatedAts] = (
                 await serving.getAllServices()
             ).map((value) => [...value]);
 
             expect(addresses).to.have.members([provider1Address, provider2Address]);
+            expect(names).to.have.members([provider1ServiceName, provider2ServiceName]);
+            expect(serviceTypes).to.have.members([provider1ServiceType, provider2ServiceType]);
+            expect(urls).to.have.members([provider1Url, provider2Url]);
             expect(inputPrices).to.have.members([BigInt(provider1InputPrice), BigInt(provider2InputPrice)]);
             expect(outputPrices).to.have.members([BigInt(provider1OutputPrice), BigInt(provider2OutputPrice)]);
-            expect(urls).to.have.members([provider1Url, provider2Url]);
-            expect(names).to.have.members([provider1Name, provider2Name]);
             expect(updatedAts[0]).to.not.equal(0);
             expect(updatedAts[1]).to.not.equal(0);
         });
 
         it("should update service", async () => {
-            const modifiedInputPrice = 200;
+            const modifiedServiceType = "RPC";
             const modifiedPriceUrl = "https://example-modified.com";
+            const modifiedInputPrice = 200;
+            const modifiedOutputPrice = 300;
 
             await expect(
                 serving
                     .connect(provider1)
-                    .addOrUpdateService(provider1Name, modifiedInputPrice, provider2InputPrice, modifiedPriceUrl)
+                    .addOrUpdateService(
+                        provider1ServiceName,
+                        modifiedServiceType,
+                        modifiedPriceUrl,
+                        modifiedInputPrice,
+                        modifiedOutputPrice
+                    )
             )
                 .to.emit(serving, "ServiceUpdated")
                 .withArgs(
                     provider1Address,
-                    "0x" + Buffer.from(provider1Name).toString("hex"),
-                    modifiedInputPrice,
-                    provider2InputPrice,
+                    "0x" + Buffer.from(provider1ServiceName).toString("hex"),
+                    modifiedServiceType,
                     modifiedPriceUrl,
+                    modifiedInputPrice,
+                    modifiedOutputPrice,
                     anyValue
                 );
 
-            const [inputPrice, , url, updatedAt] = await serving.getService(provider1Address, provider1Name);
+            const [serviceType, url, inputPrice, outputPrice, updatedAt] = await serving.getService(
+                provider1Address,
+                provider1ServiceName
+            );
 
-            expect(inputPrice).to.equal(modifiedInputPrice);
+            expect(serviceType).to.equal(modifiedServiceType);
             expect(url).to.equal(modifiedPriceUrl);
+            expect(inputPrice).to.equal(modifiedInputPrice);
+            expect(outputPrice).to.equal(modifiedOutputPrice);
             expect(updatedAt).to.not.equal(0);
         });
 
         it("should remove service correctly", async function () {
-            await expect(serving.connect(provider1).removeService(provider1Name))
+            await expect(serving.connect(provider1).removeService(provider1ServiceName))
                 .to.emit(serving, "ServiceRemoved")
-                .withArgs(provider1Address, "0x" + Buffer.from(provider1Name).toString("hex"));
+                .withArgs(provider1Address, "0x" + Buffer.from(provider1ServiceName).toString("hex"));
 
             const [addresses] = await serving.getAllServices();
             expect(addresses.length).to.equal(1);
@@ -206,7 +239,7 @@ describe("Serving", () => {
                     owner,
                     ownerAddress,
                     provider1Address,
-                    provider1Name,
+                    provider1ServiceName,
                     inputCount,
                     outputCount,
                     requestCreatedAt,
@@ -221,7 +254,7 @@ describe("Serving", () => {
                     user1,
                     user1Address,
                     provider1Address,
-                    provider1Name,
+                    provider1ServiceName,
                     inputCount,
                     outputCount,
                     requestCreatedAt,
@@ -258,7 +291,13 @@ describe("Serving", () => {
             const modifiedInputPrice = 10000;
             const tx = await serving
                 .connect(provider1)
-                .addOrUpdateService(provider1Name, modifiedInputPrice, provider1OutputPrice, provider1Url);
+                .addOrUpdateService(
+                    provider1ServiceName,
+                    provider1ServiceType,
+                    provider1Url,
+                    modifiedInputPrice,
+                    provider1OutputPrice
+                );
             await tx.wait();
 
             await expect(serving.connect(provider1).settleFees(requestTrace)).to.be.revertedWith("Service updated");
@@ -272,7 +311,7 @@ describe("Serving", () => {
                     user1,
                     user1Address,
                     provider1Address,
-                    provider1Name,
+                    provider1ServiceName,
                     inputCount,
                     outputCount,
                     requestCreatedAt,
