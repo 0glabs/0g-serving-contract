@@ -1,13 +1,15 @@
 import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
 import { expect } from "chai";
-import { Contract } from "ethers";
-import { ethers, upgrades } from "hardhat";
+import { deployments, ethers, getNamedAccounts } from "hardhat";
+import { Deployment } from "hardhat-deploy/types";
+import { HardhatRuntimeEnvironment } from "hardhat/types";
 import { beforeEach } from "mocha";
-import { Serving, ServingV2, ServingV2__factory, Serving__factory } from "../typechain-types";
+import { upgradeImplementation } from "../src/utils/utils";
+import { Serving, ServingV2 } from "../typechain-types";
 
 describe("Upgrade Serving", () => {
-    let beacon: Contract;
-    let Serving: Serving__factory, ServingV2: ServingV2__factory, serving: Serving, servingV2: ServingV2;
+    let serving: Serving, servingV2: ServingV2;
+    let servingDeployment: Deployment, beaconDeployment: Deployment;
     let owner: HardhatEthersSigner,
         user1: HardhatEthersSigner,
         provider1: HardhatEthersSigner,
@@ -16,7 +18,6 @@ describe("Upgrade Serving", () => {
 
     const ownerInitialBalance = 1000;
     const user1InitialBalance = 2000;
-    const lockTime = 24 * 60 * 60;
 
     const provider1Name = "test-provider-1";
     const provider1Type = "HTTP";
@@ -31,12 +32,9 @@ describe("Upgrade Serving", () => {
     const provider2Url = "https://example-2.com";
 
     beforeEach(async () => {
+        await deployments.fixture(["Serving"]);
+
         [owner, user1, provider1, provider2] = await ethers.getSigners();
-        Serving = await ethers.getContractFactory("Serving");
-
-        beacon = await upgrades.deployBeacon(Serving);
-        serving = (await upgrades.deployBeaconProxy(beacon, Serving, [lockTime])) as unknown as Serving;
-
         [ownerAddress, user1Address, provider1Address, provider2Address] = await Promise.all([
             owner.getAddress(),
             user1.getAddress(),
@@ -44,9 +42,15 @@ describe("Upgrade Serving", () => {
             provider2.getAddress(),
         ]);
 
+        beaconDeployment = await deployments.get("UpgradeableBeacon");
+        servingDeployment = await deployments.get("Serving");
+        serving = await ethers.getContractAt("Serving", servingDeployment.address);
+
         await Promise.all([
-            serving.depositFund(provider1, { value: ownerInitialBalance }),
-            serving.connect(user1).depositFund(provider1, { value: user1InitialBalance }),
+            serving.depositFund(provider1Address, { value: ownerInitialBalance }),
+            serving
+                .connect(user1)
+                .depositFund(provider1Address, { value: user1InitialBalance, from: await user1.getAddress() }),
             serving
                 .connect(provider1)
                 .addOrUpdateService(
@@ -69,9 +73,12 @@ describe("Upgrade Serving", () => {
     });
 
     it("should succeed in getting status set by old contract", async () => {
-        ServingV2 = (await ethers.getContractFactory("ServingV2")) as unknown as ServingV2__factory;
-        await upgrades.upgradeBeacon(beacon, ServingV2);
-        servingV2 = ServingV2.attach(await serving.getAddress()) as unknown as ServingV2;
+        await upgradeImplementation(
+            { deployments, getNamedAccounts, ethers } as HardhatRuntimeEnvironment,
+            "ServingV2",
+            beaconDeployment.address
+        );
+        servingV2 = (await ethers.getContractAt("ServingV2", servingDeployment.address)) as ServingV2;
 
         const [
             userAddresses,
@@ -84,17 +91,17 @@ describe("Upgrade Serving", () => {
             serviceInputPrices,
             serviceOutputPrices,
             serviceUpdatedAts,
-        ] = (await servingV2.getAllData()).map((value) => [...value]);
+        ] = (await servingV2.getAllData()).map((value) => value.map((b) => b.toString()));
 
         expect(userAddresses).to.have.members([ownerAddress, user1Address]);
         expect(userAccountProviderAddresses).to.have.members([provider1Address, provider1Address]);
-        expect(userAccountBalances).to.have.members([BigInt(ownerInitialBalance), BigInt(user1InitialBalance)]);
+        expect(userAccountBalances).to.have.members([ownerInitialBalance.toString(), user1InitialBalance.toString()]);
         expect(providerAddresses).to.have.members([provider1Address, provider2Address]);
         expect(serviceNames).to.have.members([provider1Name, provider2Name]);
         expect(serviceTypes).to.have.members([provider1Type, provider2Type]);
         expect(serviceUrls).to.have.members([provider1Url, provider2Url]);
-        expect(serviceInputPrices).to.have.members([BigInt(provider1InputPrice), BigInt(provider2InputPrice)]);
-        expect(serviceOutputPrices).to.have.members([BigInt(provider1OutputPrice), BigInt(provider2OutputPrice)]);
+        expect(serviceInputPrices).to.have.members([provider1InputPrice.toString(), provider2InputPrice.toString()]);
+        expect(serviceOutputPrices).to.have.members([provider1OutputPrice.toString(), provider2OutputPrice.toString()]);
         expect(serviceUpdatedAts[0]).to.not.equal(0);
         expect(serviceUpdatedAts[1]).to.not.equal(0);
     });

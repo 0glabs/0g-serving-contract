@@ -1,6 +1,8 @@
 import "@nomicfoundation/hardhat-toolbox";
 import "@openzeppelin/hardhat-upgrades";
 import dotenv from "dotenv";
+import "hardhat-deploy";
+import "hardhat-deploy-ethers";
 import "hardhat-gas-reporter";
 import { HardhatUserConfig } from "hardhat/config";
 dotenv.config();
@@ -9,6 +11,12 @@ const ZG_PRIVATE_KEY = process.env.PRIVATE_KEY || "";
 
 /** @type import('hardhat/config').HardhatUserConfig */
 const config: HardhatUserConfig = {
+    paths: {
+        artifacts: "artifacts",
+        cache: "build/cache",
+        sources: "contracts",
+        deploy: "src/deploy",
+    },
     solidity: {
         version: "0.8.20",
         settings: {
@@ -31,6 +39,11 @@ const config: HardhatUserConfig = {
                 enabled: true,
                 runs: 200,
             },
+        },
+    },
+    namedAccounts: {
+        deployer: {
+            default: 0,
         },
     },
     networks: {

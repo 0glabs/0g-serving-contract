@@ -12,6 +12,8 @@ contract ServingV2 is OwnableUpgradeable {
     using ServiceLibrary for ServiceLibrary.ServiceMap;
     using RequestLibrary for Request;
 
+    bool public initialized;
+
     uint public lockTime;
     UserAccountLibrary.UserAccountMap private userAccountMap;
     ServiceLibrary.ServiceMap private serviceMap;
@@ -39,6 +41,7 @@ contract ServingV2 is OwnableUpgradeable {
     function initialize(uint _locktime) public initializer {
         __Ownable_init(msg.sender);
         lockTime = _locktime;
+        initialized = true;
     }
 
     function updateLockTime(uint _locktime) public onlyOwner {

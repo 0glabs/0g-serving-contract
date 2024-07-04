@@ -2,9 +2,10 @@ node_modules
 .env
 
 # Hardhat files
-/cache
+/build
 /artifacts
 .openzeppelin
+deployments
 
 # TypeChain files
 /typechain-types
