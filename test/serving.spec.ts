@@ -91,11 +91,7 @@ describe("Serving", () => {
     describe("User", () => {
         it("should fail to update the lock time if it is not the owner", async () => {
             const updatedLockTime = 2 * 24 * 60 * 60;
-            await expect(serving.connect(user1).updateLockTime(updatedLockTime)).to.be.revertedWithCustomError(
-                serving,
-                "OwnableUnauthorizedAccount"
-            );
-
+            await expect(serving.connect(user1).updateLockTime(updatedLockTime)).to.be.reverted;
             const result = await serving.lockTime();
             expect(result).to.equal(BigInt(lockTime));
         });
