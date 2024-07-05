@@ -1,13 +1,14 @@
 // SPDX-License-Identifier: MIT
 pragma solidity >=0.8.0 <0.9.0;
 
-import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
+import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/utils/structs/EnumerableMap.sol";
+import "../utils/Initializable.sol";
 import "../UserAccount.sol";
 import "../Service.sol";
 import "../Request.sol";
 
-contract ServingV2 is OwnableUpgradeable {
+contract ServingV2 is Ownable, Initializable {
     using UserAccountLibrary for UserAccountLibrary.UserAccountMap;
     using ServiceLibrary for ServiceLibrary.ServiceMap;
     using RequestLibrary for Request;
@@ -36,8 +37,8 @@ contract ServingV2 is OwnableUpgradeable {
     );
     event ServiceRemoved(address indexed service, string indexed name);
 
-    function initialize(uint _locktime) public initializer {
-        __Ownable_init(msg.sender);
+    function initialize(uint _locktime, address owner) public onlyInitializeOnce {
+        _transferOwnership(owner);
         lockTime = _locktime;
     }
 

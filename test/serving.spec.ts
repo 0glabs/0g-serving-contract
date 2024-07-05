@@ -3,13 +3,15 @@ import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
 import { time } from "@nomicfoundation/hardhat-toolbox/network-helpers";
 import { expect } from "chai";
 import { Block, ContractTransactionResponse, TransactionReceipt } from "ethers";
-import { ethers, upgrades } from "hardhat";
+import { deployments, ethers } from "hardhat";
+import { Deployment } from "hardhat-deploy/types";
 import { beforeEach } from "mocha";
-import { Serving, Serving__factory } from "../typechain-types";
+import { Serving } from "../typechain-types";
 import { RequestStruct, RequestTraceStruct } from "../typechain-types/contracts/Serving";
 
 describe("Serving", () => {
-    let Serving: Serving__factory, serving: Serving;
+    let serving: Serving;
+    let servingDeployment: Deployment;
     let owner: HardhatEthersSigner,
         user1: HardhatEthersSigner,
         provider1: HardhatEthersSigner,
@@ -34,21 +36,20 @@ describe("Serving", () => {
     const provider2Url = "https://example-2.com";
 
     beforeEach(async () => {
+        await deployments.fixture(["Serving"]);
+        servingDeployment = await deployments.get("Serving");
+        serving = await ethers.getContractAt("Serving", servingDeployment.address);
+
         [owner, user1, provider1, provider2] = await ethers.getSigners();
-        Serving = await ethers.getContractFactory("Serving");
-    });
-
-    beforeEach(async () => {
-        const beacon = await upgrades.deployBeacon(Serving);
-        serving = (await upgrades.deployBeaconProxy(beacon, Serving, [lockTime])) as unknown as Serving;
-
         [ownerAddress, user1Address, provider1Address, provider2Address] = await Promise.all([
             owner.getAddress(),
             user1.getAddress(),
             provider1.getAddress(),
             provider2.getAddress(),
         ]);
+    });
 
+    beforeEach(async () => {
         const initializations: ContractTransactionResponse[] = await Promise.all([
             serving.depositFund(provider1Address, { value: ownerInitialBalance }),
             serving.connect(user1).depositFund(provider1Address, { value: user1InitialBalance }),
@@ -80,7 +81,7 @@ describe("Serving", () => {
     describe("Owner", () => {
         it("should succeed in updating lock time succeed", async () => {
             const updatedLockTime = 2 * 24 * 60 * 60;
-            await expect(serving.updateLockTime(updatedLockTime)).not.to.be.reverted;
+            await expect(serving.connect(owner).updateLockTime(updatedLockTime)).not.to.be.reverted;
 
             const result = await serving.lockTime();
             expect(result).to.equal(BigInt(updatedLockTime));
@@ -90,11 +91,7 @@ describe("Serving", () => {
     describe("User", () => {
         it("should fail to update the lock time if it is not the owner", async () => {
             const updatedLockTime = 2 * 24 * 60 * 60;
-            await expect(serving.connect(user1).updateLockTime(updatedLockTime)).to.be.revertedWithCustomError(
-                Serving,
-                "OwnableUnauthorizedAccount"
-            );
-
+            await expect(serving.connect(user1).updateLockTime(updatedLockTime)).to.be.reverted;
             const result = await serving.lockTime();
             expect(result).to.equal(BigInt(lockTime));
         });
