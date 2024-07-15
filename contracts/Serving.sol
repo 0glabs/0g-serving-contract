@@ -46,8 +46,8 @@ contract Serving is Ownable, Initializable {
         lockTime = _locktime;
     }
 
-    function getUserAccountBalance(address user, address provider) public view returns (uint) {
-        return userAccountMap.getUserAccount(user, provider).balance;
+    function getUserAccount(address user, address provider) public view returns (UserAccount memory) {
+        return userAccountMap.getUserAccount(user, provider);
     }
 
     function getAllUserAccounts() public view returns (address[] memory, address[] memory, uint[] memory) {

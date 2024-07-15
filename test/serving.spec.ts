@@ -100,8 +100,8 @@ describe("Serving", () => {
             const depositAmount = 1000;
             await serving.depositFund(provider1Address, { value: depositAmount });
 
-            const updatedBalance = await serving.getUserAccountBalance(ownerAddress, provider1);
-            expect(updatedBalance).to.equal(BigInt(ownerInitialBalance + depositAmount));
+            const account = await serving.getUserAccount(ownerAddress, provider1);
+            expect(account.balance).to.equal(BigInt(ownerInitialBalance + depositAmount));
         });
 
         it("should get all users", async () => {
@@ -135,8 +135,8 @@ describe("Serving", () => {
             await time.increaseTo(unlockTime);
 
             await expect(serving.processRefund(provider1, refundIndex)).not.to.be.reverted;
-            const finalBalance = await serving.getUserAccountBalance(ownerAddress, provider1);
-            expect(finalBalance).to.be.equal(BigInt(ownerInitialBalance - refundAmount));
+            const account = await serving.getUserAccount(ownerAddress, provider1);
+            expect(account.balance).to.be.equal(BigInt(ownerInitialBalance - refundAmount));
         });
     });
 
