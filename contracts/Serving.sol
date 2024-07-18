@@ -17,15 +17,8 @@ contract Serving is Ownable, Initializable {
     UserAccountLibrary.UserAccountMap private userAccountMap;
     ServiceLibrary.ServiceMap private serviceMap;
 
-    event BalanceUpdated(address indexed user, address indexed provider, uint amount);
-    event RefundRequested(
-        address indexed user,
-        address indexed provider,
-        uint indexed index,
-        uint amount,
-        uint timestamp
-    );
-    event RefundProcessed(address indexed user, address indexed provider, uint indexed index, uint amount);
+    event BalanceUpdated(address indexed user, address indexed provider, uint amount, uint pendingRefund);
+    event RefundRequested(address indexed user, address indexed provider, uint indexed index, uint timestamp);
     event ServiceUpdated(
         address indexed service,
         string indexed name,
@@ -55,26 +48,25 @@ contract Serving is Ownable, Initializable {
     }
 
     function depositFund(address provider) external payable {
-        uint balance = userAccountMap.depositFund(msg.sender, provider, msg.value);
-        emit BalanceUpdated(msg.sender, provider, balance);
+        (uint balance, uint pendingRefund) = userAccountMap.depositFund(msg.sender, provider, msg.value);
+        emit BalanceUpdated(msg.sender, provider, balance, pendingRefund);
     }
 
     function requestRefund(address provider, uint amount) external {
         uint index = userAccountMap.requestRefund(msg.sender, provider, amount);
-        emit RefundRequested(msg.sender, provider, index, amount, block.timestamp);
+        emit RefundRequested(msg.sender, provider, index, block.timestamp);
     }
 
-    function processRefund(address provider, uint index) external {
-        (uint amount, uint balance, uint pendingRefund) = userAccountMap.processRefund(
+    function processRefund(address provider, uint[] calldata indices) external {
+        (uint totalAmount, uint balance, uint pendingRefund) = userAccountMap.processRefund(
             msg.sender,
             provider,
-            index,
+            indices,
             lockTime
         );
 
-        payable(msg.sender).transfer(amount);
-        emit RefundProcessed(msg.sender, provider, index, pendingRefund);
-        emit BalanceUpdated(msg.sender, provider, balance);
+        payable(msg.sender).transfer(totalAmount);
+        emit BalanceUpdated(msg.sender, provider, balance, pendingRefund);
     }
 
     function getService(
@@ -147,10 +139,33 @@ contract Serving is Ownable, Initializable {
             amount += request.inputCount * inputPrice;
             amount += request.previousOutputCount * outputPrice;
         }
-
         require(userAccount.balance >= amount, "Insufficient balance");
+
+        if (amount > (userAccount.balance - userAccount.pendingRefund)) {
+            uint remainingFee = amount - userAccount.balance + userAccount.pendingRefund;
+            require(userAccount.pendingRefund >= remainingFee, "Insufficient balance in pendingRefund");
+
+            userAccount.pendingRefund -= remainingFee;
+            for (int i = int(userAccount.refunds.length - 1); i >= 0; i--) {
+                Refund storage refund = userAccount.refunds[uint(i)];
+                if (refund.processed) {
+                    continue;
+                }
+
+                if (refund.amount <= remainingFee) {
+                    remainingFee -= refund.amount;
+                } else {
+                    refund.amount -= remainingFee;
+                    remainingFee = 0;
+                }
+
+                if (remainingFee == 0) {
+                    break;
+                }
+            }
+        }
         userAccount.balance -= amount;
-        emit BalanceUpdated(requests[0].userAddress, msg.sender, userAccount.balance);
+        emit BalanceUpdated(requests[0].userAddress, msg.sender, userAccount.balance, userAccount.pendingRefund);
         payable(msg.sender).transfer(amount);
     }
 

@@ -116,27 +116,32 @@ describe("Serving", () => {
     });
 
     describe("Process refund", () => {
-        let unlockTime: number, refundIndex: bigint;
-        const refundAmount = 500;
+        let unlockTime: number, refundIndex1: bigint, refundIndex2: bigint;
+        const refundAmount1 = 100;
+        const refundAmount2 = 200;
 
         beforeEach(async () => {
-            const res = await serving.requestRefund(provider1, refundAmount);
-            const receipt = await res.wait();
+            const res1 = await serving.requestRefund(provider1, refundAmount1);
+            await res1.wait();
+            const res2 = await serving.requestRefund(provider1, refundAmount2);
+            const receipt = await res2.wait();
+
             const block = await ethers.provider.getBlock((receipt as TransactionReceipt).blockNumber);
             unlockTime = (block as Block).timestamp + lockTime;
-            refundIndex = (await serving.queryFilter(serving.filters.RefundRequested, -1))[0].args[2];
+            refundIndex1 = (await serving.queryFilter(serving.filters.RefundRequested, -1))[0].args[2];
+            refundIndex2 = (await serving.queryFilter(serving.filters.RefundRequested, -1))[1].args[2];
         });
 
         it("should revert if called too soon", async () => {
-            await expect(serving.processRefund(provider1, refundIndex)).to.be.reverted;
+            await expect(serving.processRefund(provider1, [refundIndex1, refundIndex2])).to.be.reverted;
         });
 
         it("should succeeded if the unlockTime has arrived and called", async () => {
             await time.increaseTo(unlockTime);
 
-            await expect(serving.processRefund(provider1, refundIndex)).not.to.be.reverted;
+            await expect(serving.processRefund(provider1, [refundIndex1, refundIndex2])).not.to.be.reverted;
             const account = await serving.getUserAccount(ownerAddress, provider1);
-            expect(account.balance).to.be.equal(BigInt(ownerInitialBalance - refundAmount));
+            expect(account.balance).to.be.equal(BigInt(ownerInitialBalance - refundAmount1 - refundAmount2));
         });
     });
 
@@ -266,9 +271,9 @@ describe("Serving", () => {
         it("should succeed", async () => {
             await expect(serving.connect(provider1).settleFees(requestTrace))
                 .to.emit(serving, "BalanceUpdated")
-                .withArgs(ownerAddress, provider1, ownerInitialBalance - fee)
+                .withArgs(ownerAddress, provider1, ownerInitialBalance - fee, 0)
                 .and.to.emit(serving, "BalanceUpdated")
-                .withArgs(user1Address, provider1, user1InitialBalance - fee);
+                .withArgs(user1Address, provider1, user1InitialBalance - fee, 0);
         });
 
         it("should failed due to double spending", async () => {

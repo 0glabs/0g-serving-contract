@@ -61,15 +61,15 @@ library UserAccountLibrary {
         address user,
         address provider,
         uint amount
-    ) internal returns (uint) {
+    ) internal returns (uint, uint) {
         bytes32 key = _key(user, provider);
         if (!_contains(map, key)) {
             _set(map, key, user, provider, amount);
-            return amount;
+            return (amount, 0);
         }
         UserAccount storage userAccount = _get(map, user, provider);
         userAccount.balance += amount;
-        return userAccount.balance;
+        return (userAccount.balance, userAccount.pendingRefund);
     }
 
     function requestRefund(
@@ -91,24 +91,32 @@ library UserAccountLibrary {
         UserAccountMap storage map,
         address user,
         address provider,
-        uint index,
+        uint[] memory indices,
         uint lockTime
-    ) internal returns (uint, uint, uint) {
+    ) internal returns (uint totalAmount, uint balance, uint pendingRefund) {
         UserAccount storage userAccount = _get(map, user, provider);
-        if (index > userAccount.refunds.length) {
-            revert RefundInvalid(user, provider, index);
+        totalAmount = 0;
+
+        for (uint i = 0; i < indices.length; i++) {
+            uint index = indices[i];
+            if (index >= userAccount.refunds.length) {
+                revert RefundInvalid(user, provider, index);
+            }
+            Refund storage refund = userAccount.refunds[index];
+            if (refund.processed) {
+                revert RefundProcessed(user, provider, index);
+            }
+            if (block.timestamp < refund.createdAt + lockTime) {
+                revert RefundLocked(user, provider, index);
+            }
+            userAccount.balance -= refund.amount;
+            userAccount.pendingRefund -= refund.amount;
+            refund.processed = true;
+            totalAmount += refund.amount;
         }
-        Refund storage refund = userAccount.refunds[index];
-        if (refund.processed) {
-            revert RefundProcessed(user, provider, index);
-        }
-        if (block.timestamp < refund.createdAt + lockTime) {
-            revert RefundLocked(user, provider, index);
-        }
-        userAccount.balance -= refund.amount;
-        userAccount.pendingRefund -= refund.amount;
-        refund.processed = true;
-        return (refund.amount, userAccount.balance, userAccount.pendingRefund);
+
+        balance = userAccount.balance;
+        pendingRefund = userAccount.pendingRefund;
     }
 
     function _at(UserAccountMap storage map, uint index) internal view returns (UserAccount storage) {
