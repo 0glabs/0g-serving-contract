@@ -73,7 +73,7 @@ The contract provides interfaces to query `user` and `service` information. Addi
 
 The nonce serves to identify each `request` to prevent duplicate settlements.
 
-1. The UserAccount structure in contract maintains a nonce field for each group of `user` and `service provider`.
+1. The Account structure in contract maintains a nonce field for each group of `user` and `service provider`.
 2. The nonce in each `request` needs to be _greater than_ the stored nonce on the nonce field to be considered valid.
 3. After each `request` settlement, update the corresponding nonce field.
 4. Following the rules above, the `user` client ensures to send requests with increasing nonces, and the `service provider` server confirms upon receiving requests.

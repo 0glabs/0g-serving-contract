@@ -61,6 +61,6 @@ BEACON_ADDRESS=<old beacon address> SERVING_ADDRESS=<proxy address> yarn upgrade
         # Commands in the Hardhat console:
         const servingV2 = await ethers.getContractFactory("ServingV2")
         const servingV2 = await servingV2.attach("<proxy address>")
-        const [userAddresses, userAddresses,userAccountBalances] = (await servingV2.getAllData())
-        # userAccountBalances should be equal to [1000]
+        const [accounts, services] = (await servingV2.getAllData())
+        # accounts[0].balance should be equal to 1000
         ```

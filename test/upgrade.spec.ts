@@ -83,9 +83,9 @@ describe("Upgrade Serving", () => {
 
         const [accounts, services] = await servingV2.getAllData();
 
-        const userAddresses = (accounts as AccountStructOutput[]).map((a) => a.user);
-        const userAccountProviderAddresses = (accounts as AccountStructOutput[]).map((a) => a.provider);
-        const userAccountBalances = (accounts as AccountStructOutput[]).map((a) => a.balance);
+        const accountUserAddresses = (accounts as AccountStructOutput[]).map((a) => a.user);
+        const accountProviderAddresses = (accounts as AccountStructOutput[]).map((a) => a.provider);
+        const accountBalances = (accounts as AccountStructOutput[]).map((a) => a.balance);
 
         const providerAddresses = (services as ServiceStructOutput[]).map((s) => s.provider);
         const serviceNames = (services as ServiceStructOutput[]).map((s) => s.name);
@@ -95,9 +95,9 @@ describe("Upgrade Serving", () => {
         const serviceOutputPrices = (services as ServiceStructOutput[]).map((s) => s.outputPrice);
         const serviceUpdatedAts = (services as ServiceStructOutput[]).map((s) => s.updatedAt);
 
-        expect(userAddresses).to.have.members([ownerAddress, user1Address]);
-        expect(userAccountProviderAddresses).to.have.members([provider1Address, provider1Address]);
-        expect(userAccountBalances).to.have.members([BigInt(ownerInitialBalance), BigInt(user1InitialBalance)]);
+        expect(accountUserAddresses).to.have.members([ownerAddress, user1Address]);
+        expect(accountProviderAddresses).to.have.members([provider1Address, provider1Address]);
+        expect(accountBalances).to.have.members([BigInt(ownerInitialBalance), BigInt(user1InitialBalance)]);
         expect(providerAddresses).to.have.members([provider1Address, provider2Address]);
         expect(serviceNames).to.have.members([provider1Name, provider2Name]);
         expect(serviceTypes).to.have.members([provider1Type, provider2Type]);
