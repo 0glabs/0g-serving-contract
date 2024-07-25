@@ -27,43 +27,15 @@ library ServiceLibrary {
         ServiceMap storage map,
         address provider,
         string memory name
-    ) internal view returns (string memory, string memory, uint, uint, uint) {
-        Service storage value = _get(map, provider, name);
-        return (value.serviceType, value.url, value.inputPrice, value.outputPrice, value.updatedAt);
+    ) internal view returns (Service storage) {
+        return _get(map, provider, name);
     }
 
-    function getAllServices(
-        ServiceMap storage map
-    )
-        internal
-        view
-        returns (
-            address[] memory addresses,
-            string[] memory names,
-            string[] memory serviceTypes,
-            string[] memory urls,
-            uint[] memory inputPrices,
-            uint[] memory outputPrices,
-            uint[] memory updatedAts
-        )
-    {
+    function getAllServices(ServiceMap storage map) internal view returns (Service[] memory services) {
         uint len = _length(map);
-        addresses = new address[](len);
-        inputPrices = new uint[](len);
-        outputPrices = new uint[](len);
-        urls = new string[](len);
-        names = new string[](len);
-        serviceTypes = new string[](len);
-        updatedAts = new uint[](len);
+        services = new Service[](len);
         for (uint i = 0; i < len; ++i) {
-            Service storage value = _at(map, i);
-            addresses[i] = value.provider;
-            inputPrices[i] = value.inputPrice;
-            outputPrices[i] = value.outputPrice;
-            urls[i] = value.url;
-            names[i] = value.name;
-            serviceTypes[i] = value.serviceType;
-            updatedAts[i] = value.updatedAt;
+            services[i] = _at(map, i);
         }
     }
 

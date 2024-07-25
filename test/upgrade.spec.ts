@@ -6,6 +6,7 @@ import { HardhatRuntimeEnvironment } from "hardhat/types";
 import { beforeEach } from "mocha";
 import { upgradeImplementation } from "../src/utils/utils";
 import { Serving, ServingV2 } from "../typechain-types";
+import { AccountStructOutput, ServiceStructOutput } from "../typechain-types/contracts/Serving";
 
 describe("Upgrade Serving", () => {
     let serving: Serving, servingV2: ServingV2;
@@ -80,28 +81,29 @@ describe("Upgrade Serving", () => {
         );
         servingV2 = (await ethers.getContractAt("ServingV2", servingDeployment.address)) as ServingV2;
 
-        const [
-            userAddresses,
-            userAccountProviderAddresses,
-            userAccountBalances,
-            providerAddresses,
-            serviceNames,
-            serviceTypes,
-            serviceUrls,
-            serviceInputPrices,
-            serviceOutputPrices,
-            serviceUpdatedAts,
-        ] = (await servingV2.getAllData()).map((value) => value.map((b) => b.toString()));
+        const [accounts, services] = await servingV2.getAllData();
+
+        const userAddresses = (accounts as AccountStructOutput[]).map((a) => a.user);
+        const userAccountProviderAddresses = (accounts as AccountStructOutput[]).map((a) => a.provider);
+        const userAccountBalances = (accounts as AccountStructOutput[]).map((a) => a.balance);
+
+        const providerAddresses = (services as ServiceStructOutput[]).map((s) => s.provider);
+        const serviceNames = (services as ServiceStructOutput[]).map((s) => s.name);
+        const serviceTypes = (services as ServiceStructOutput[]).map((s) => s.serviceType);
+        const serviceUrls = (services as ServiceStructOutput[]).map((s) => s.url);
+        const serviceInputPrices = (services as ServiceStructOutput[]).map((s) => s.inputPrice);
+        const serviceOutputPrices = (services as ServiceStructOutput[]).map((s) => s.outputPrice);
+        const serviceUpdatedAts = (services as ServiceStructOutput[]).map((s) => s.updatedAt);
 
         expect(userAddresses).to.have.members([ownerAddress, user1Address]);
         expect(userAccountProviderAddresses).to.have.members([provider1Address, provider1Address]);
-        expect(userAccountBalances).to.have.members([ownerInitialBalance.toString(), user1InitialBalance.toString()]);
+        expect(userAccountBalances).to.have.members([BigInt(ownerInitialBalance), BigInt(user1InitialBalance)]);
         expect(providerAddresses).to.have.members([provider1Address, provider2Address]);
         expect(serviceNames).to.have.members([provider1Name, provider2Name]);
         expect(serviceTypes).to.have.members([provider1Type, provider2Type]);
         expect(serviceUrls).to.have.members([provider1Url, provider2Url]);
-        expect(serviceInputPrices).to.have.members([provider1InputPrice.toString(), provider2InputPrice.toString()]);
-        expect(serviceOutputPrices).to.have.members([provider1OutputPrice.toString(), provider2OutputPrice.toString()]);
+        expect(serviceInputPrices).to.have.members([BigInt(provider1InputPrice), BigInt(provider2InputPrice)]);
+        expect(serviceOutputPrices).to.have.members([BigInt(provider1OutputPrice), BigInt(provider2OutputPrice)]);
         expect(serviceUpdatedAts[0]).to.not.equal(0);
         expect(serviceUpdatedAts[1]).to.not.equal(0);
     });

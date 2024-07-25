@@ -4,17 +4,17 @@ pragma solidity >=0.8.0 <0.9.0;
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/utils/structs/EnumerableMap.sol";
 import "../utils/Initializable.sol";
-import "../UserAccount.sol";
+import "../Account.sol";
 import "../Service.sol";
 import "../Request.sol";
 
 contract ServingV2 is Ownable, Initializable {
-    using UserAccountLibrary for UserAccountLibrary.UserAccountMap;
+    using AccountLibrary for AccountLibrary.AccountMap;
     using ServiceLibrary for ServiceLibrary.ServiceMap;
     using RequestLibrary for Request;
 
     uint public lockTime;
-    UserAccountLibrary.UserAccountMap private userAccountMap;
+    AccountLibrary.AccountMap private accountMap;
     ServiceLibrary.ServiceMap private serviceMap;
 
     event BalanceUpdated(address indexed user, address indexed provider, uint amount, uint pendingRefund);
@@ -39,26 +39,26 @@ contract ServingV2 is Ownable, Initializable {
         lockTime = _locktime;
     }
 
-    function getUserAccount(address user, address provider) public view returns (UserAccount memory) {
-        return userAccountMap.getUserAccount(user, provider);
+    function getAccount(address user, address provider) public view returns (Account memory) {
+        return accountMap.getAccount(user, provider);
     }
 
-    function getAllUserAccounts() public view returns (address[] memory, address[] memory, uint[] memory) {
-        return userAccountMap.getAllUserAccounts();
+    function getAllAccounts() public view returns (Account[] memory) {
+        return accountMap.getAllAccounts();
     }
 
     function depositFund(address provider) external payable {
-        (uint balance, uint pendingRefund) = userAccountMap.depositFund(msg.sender, provider, msg.value);
+        (uint balance, uint pendingRefund) = accountMap.depositFund(msg.sender, provider, msg.value);
         emit BalanceUpdated(msg.sender, provider, balance, pendingRefund);
     }
 
     function requestRefund(address provider, uint amount) external {
-        uint index = userAccountMap.requestRefund(msg.sender, provider, amount);
+        uint index = accountMap.requestRefund(msg.sender, provider, amount);
         emit RefundRequested(msg.sender, provider, index, block.timestamp);
     }
 
     function processRefund(address provider, uint[] calldata indices) external {
-        (uint totalAmount, uint balance, uint pendingRefund) = userAccountMap.processRefund(
+        (uint totalAmount, uint balance, uint pendingRefund) = accountMap.processRefund(
             msg.sender,
             provider,
             indices,
@@ -69,31 +69,12 @@ contract ServingV2 is Ownable, Initializable {
         emit BalanceUpdated(msg.sender, provider, balance, pendingRefund);
     }
 
-    function getService(
-        address provider,
-        string memory name
-    )
-        public
-        view
-        returns (string memory serviceType, string memory url, uint inputPrice, uint outputPrice, uint updatedAt)
-    {
-        (serviceType, url, inputPrice, outputPrice, updatedAt) = serviceMap.getService(provider, name);
+    function getService(address provider, string memory name) public view returns (Service memory service) {
+        service = serviceMap.getService(provider, name);
     }
 
-    function getAllServices()
-        public
-        view
-        returns (
-            address[] memory addresses,
-            string[] memory names,
-            string[] memory serviceTypes,
-            string[] memory urls,
-            uint[] memory inputPrices,
-            uint[] memory outputPrices,
-            uint[] memory updatedAts
-        )
-    {
-        (addresses, names, serviceTypes, urls, inputPrices, outputPrices, updatedAts) = serviceMap.getAllServices();
+    function getAllServices() public view returns (Service[] memory services) {
+        services = serviceMap.getAllServices();
     }
 
     function addOrUpdateService(
@@ -122,32 +103,29 @@ contract ServingV2 is Ownable, Initializable {
     function _settleFees(Request[] memory requests) internal {
         require(requests.length > 0, "Empty request trace");
         uint amount = 0;
-        UserAccount storage userAccount = userAccountMap.getUserAccount(requests[0].userAddress, msg.sender);
+        Account storage account = accountMap.getAccount(requests[0].userAddress, msg.sender);
         for (uint i = 0; i < requests.length; i++) {
             Request memory request = requests[i];
 
-            require(request.nonce > userAccount.nonce, "Nonce used");
-            userAccount.nonce = request.nonce;
+            require(request.nonce > account.nonce, "Nonce used");
+            account.nonce = request.nonce;
 
             require(request.verify(msg.sender), "Invalid request");
 
-            (, , uint inputPrice, uint outputPrice, uint updatedAt) = serviceMap.getService(
-                msg.sender,
-                request.serviceName
-            );
-            require(updatedAt < request.createdAt, "Service updated");
-            amount += request.inputCount * inputPrice;
-            amount += request.previousOutputCount * outputPrice;
+            Service storage service = serviceMap.getService(msg.sender, request.serviceName);
+            require(service.updatedAt < request.createdAt, "Service updated");
+            amount += request.inputCount * service.inputPrice;
+            amount += request.previousOutputCount * service.outputPrice;
         }
-        require(userAccount.balance >= amount, "Insufficient balance");
+        require(account.balance >= amount, "Insufficient balance");
 
-        if (amount > (userAccount.balance - userAccount.pendingRefund)) {
-            uint remainingFee = amount - userAccount.balance + userAccount.pendingRefund;
-            require(userAccount.pendingRefund >= remainingFee, "Insufficient balance in pendingRefund");
+        if (amount > (account.balance - account.pendingRefund)) {
+            uint remainingFee = amount - account.balance + account.pendingRefund;
+            require(account.pendingRefund >= remainingFee, "Insufficient balance in pendingRefund");
 
-            userAccount.pendingRefund -= remainingFee;
-            for (int i = int(userAccount.refunds.length - 1); i >= 0; i--) {
-                Refund storage refund = userAccount.refunds[uint(i)];
+            account.pendingRefund -= remainingFee;
+            for (int i = int(account.refunds.length - 1); i >= 0; i--) {
+                Refund storage refund = account.refunds[uint(i)];
                 if (refund.processed) {
                     continue;
                 }
@@ -164,8 +142,8 @@ contract ServingV2 is Ownable, Initializable {
                 }
             }
         }
-        userAccount.balance -= amount;
-        emit BalanceUpdated(requests[0].userAddress, msg.sender, userAccount.balance, userAccount.pendingRefund);
+        account.balance -= amount;
+        emit BalanceUpdated(requests[0].userAddress, msg.sender, account.balance, account.pendingRefund);
         payable(msg.sender).transfer(amount);
     }
 
@@ -173,31 +151,8 @@ contract ServingV2 is Ownable, Initializable {
         return request.verify(msg.sender);
     }
 
-    function getAllData()
-        public
-        view
-        returns (
-            address[] memory userAddresses,
-            address[] memory userAccountProviderAddresses,
-            uint[] memory userAccountBalances,
-            address[] memory providerAddresses,
-            string[] memory names,
-            string[] memory serviceTypes,
-            string[] memory serviceUrls,
-            uint[] memory serviceInputPrices,
-            uint[] memory serviceOutputPrices,
-            uint[] memory serviceUpdatedAts
-        )
-    {
-        (userAddresses, userAccountProviderAddresses, userAccountBalances) = getAllUserAccounts();
-        (
-            providerAddresses,
-            names,
-            serviceTypes,
-            serviceUrls,
-            serviceInputPrices,
-            serviceOutputPrices,
-            serviceUpdatedAts
-        ) = getAllServices();
+    function getAllData() public view returns (Account[] memory accounts, Service[] memory services) {
+        accounts = getAllAccounts();
+        services = getAllServices();
     }
 }

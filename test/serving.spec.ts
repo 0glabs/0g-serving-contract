@@ -7,7 +7,12 @@ import { deployments, ethers } from "hardhat";
 import { Deployment } from "hardhat-deploy/types";
 import { beforeEach } from "mocha";
 import { Serving } from "../typechain-types";
-import { RequestStruct, RequestTraceStruct } from "../typechain-types/contracts/Serving";
+import {
+    AccountStructOutput,
+    RequestStruct,
+    RequestTraceStruct,
+    ServiceStructOutput,
+} from "../typechain-types/contracts/Serving";
 
 describe("Serving", () => {
     let serving: Serving;
@@ -100,14 +105,15 @@ describe("Serving", () => {
             const depositAmount = 1000;
             await serving.depositFund(provider1Address, { value: depositAmount });
 
-            const account = await serving.getUserAccount(ownerAddress, provider1);
+            const account = await serving.getAccount(ownerAddress, provider1);
             expect(account.balance).to.equal(BigInt(ownerInitialBalance + depositAmount));
         });
 
         it("should get all users", async () => {
-            const [userAddresses, providerAddresses, balances] = (await serving.getAllUserAccounts()).map((value) => [
-                ...value,
-            ]);
+            const accounts = await serving.getAllAccounts();
+            const userAddresses = (accounts as AccountStructOutput[]).map((a) => a.user);
+            const providerAddresses = (accounts as AccountStructOutput[]).map((a) => a.provider);
+            const balances = (accounts as AccountStructOutput[]).map((a) => a.balance);
 
             expect(userAddresses).to.have.members([ownerAddress, user1Address]);
             expect(providerAddresses).to.have.members([provider1Address, provider1Address]);
@@ -140,29 +146,31 @@ describe("Serving", () => {
             await time.increaseTo(unlockTime);
 
             await expect(serving.processRefund(provider1, [refundIndex1, refundIndex2])).not.to.be.reverted;
-            const account = await serving.getUserAccount(ownerAddress, provider1);
+            const account = await serving.getAccount(ownerAddress, provider1);
             expect(account.balance).to.be.equal(BigInt(ownerInitialBalance - refundAmount1 - refundAmount2));
         });
     });
 
     describe("Service provider", () => {
         it("should get service", async () => {
-            const [serviceType, url, inputPrice, outputPrice, updatedAt] = await serving.getService(
-                provider1Address,
-                provider1ServiceName
-            );
+            const service = await serving.getService(provider1Address, provider1ServiceName);
 
-            expect(serviceType).to.equal(provider1ServiceType);
-            expect(url).to.equal(provider1Url);
-            expect(inputPrice).to.equal(provider1InputPrice);
-            expect(outputPrice).to.equal(provider1OutputPrice);
-            expect(updatedAt).to.not.equal(0);
+            expect(service.serviceType).to.equal(provider1ServiceType);
+            expect(service.url).to.equal(provider1Url);
+            expect(service.inputPrice).to.equal(provider1InputPrice);
+            expect(service.outputPrice).to.equal(provider1OutputPrice);
+            expect(service.updatedAt).to.not.equal(0);
         });
 
         it("should get all services", async () => {
-            const [addresses, names, serviceTypes, urls, inputPrices, outputPrices, updatedAts] = (
-                await serving.getAllServices()
-            ).map((value) => [...value]);
+            const services = await serving.getAllServices();
+            const addresses = (services as ServiceStructOutput[]).map((s) => s.provider);
+            const names = (services as ServiceStructOutput[]).map((s) => s.name);
+            const serviceTypes = (services as ServiceStructOutput[]).map((s) => s.serviceType);
+            const urls = (services as ServiceStructOutput[]).map((s) => s.url);
+            const inputPrices = (services as ServiceStructOutput[]).map((s) => s.inputPrice);
+            const outputPrices = (services as ServiceStructOutput[]).map((s) => s.outputPrice);
+            const updatedAts = (services as ServiceStructOutput[]).map((s) => s.updatedAt);
 
             expect(addresses).to.have.members([provider1Address, provider2Address]);
             expect(names).to.have.members([provider1ServiceName, provider2ServiceName]);
@@ -202,16 +210,13 @@ describe("Serving", () => {
                     anyValue
                 );
 
-            const [serviceType, url, inputPrice, outputPrice, updatedAt] = await serving.getService(
-                provider1Address,
-                provider1ServiceName
-            );
+            const service = await serving.getService(provider1Address, provider1ServiceName);
 
-            expect(serviceType).to.equal(modifiedServiceType);
-            expect(url).to.equal(modifiedPriceUrl);
-            expect(inputPrice).to.equal(modifiedInputPrice);
-            expect(outputPrice).to.equal(modifiedOutputPrice);
-            expect(updatedAt).to.not.equal(0);
+            expect(service.serviceType).to.equal(modifiedServiceType);
+            expect(service.url).to.equal(modifiedPriceUrl);
+            expect(service.inputPrice).to.equal(modifiedInputPrice);
+            expect(service.outputPrice).to.equal(modifiedOutputPrice);
+            expect(service.updatedAt).to.not.equal(0);
         });
 
         it("should remove service correctly", async function () {
@@ -219,8 +224,8 @@ describe("Serving", () => {
                 .to.emit(serving, "ServiceRemoved")
                 .withArgs(provider1Address, "0x" + Buffer.from(provider1ServiceName).toString("hex"));
 
-            const [addresses] = await serving.getAllServices();
-            expect(addresses.length).to.equal(1);
+            const services = await serving.getAllServices();
+            expect(services.length).to.equal(1);
         });
     });
 

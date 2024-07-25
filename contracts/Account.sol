@@ -3,7 +3,7 @@ pragma solidity >=0.8.0 <0.9.0;
 
 import "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
 
-struct UserAccount {
+struct Account {
     address user;
     address provider;
     uint nonce;
@@ -18,46 +18,39 @@ struct Refund {
     bool processed;
 }
 
-library UserAccountLibrary {
+library AccountLibrary {
     using EnumerableSet for EnumerableSet.Bytes32Set;
 
-    error UserAccountNotexists(address user, address provider);
+    error AccountNotexists(address user, address provider);
     error InsufficientBalance(address user, address provider);
     error RefundInvalid(address user, address provider, uint index);
     error RefundProcessed(address user, address provider, uint index);
     error RefundLocked(address user, address provider, uint index);
 
-    struct UserAccountMap {
+    struct AccountMap {
         EnumerableSet.Bytes32Set _keys;
-        mapping(bytes32 => UserAccount) _values;
+        mapping(bytes32 => Account) _values;
     }
 
-    function getUserAccount(
-        UserAccountMap storage map,
+    function getAccount(
+        AccountMap storage map,
         address user,
         address provider
-    ) internal view returns (UserAccount storage) {
+    ) internal view returns (Account storage) {
         return _get(map, user, provider);
     }
 
-    function getAllUserAccounts(
-        UserAccountMap storage map
-    ) internal view returns (address[] memory users, address[] memory providers, uint[] memory balances) {
+    function getAllAccounts(AccountMap storage map) internal view returns (Account[] memory accounts) {
         uint len = _length(map);
-        users = new address[](len);
-        providers = new address[](len);
-        balances = new uint[](len);
+        accounts = new Account[](len);
 
         for (uint i = 0; i < len; i++) {
-            UserAccount storage value = _at(map, i);
-            users[i] = value.user;
-            providers[i] = value.provider;
-            balances[i] = value.balance;
+            accounts[i] = _at(map, i);
         }
     }
 
     function depositFund(
-        UserAccountMap storage map,
+        AccountMap storage map,
         address user,
         address provider,
         uint amount
@@ -67,89 +60,85 @@ library UserAccountLibrary {
             _set(map, key, user, provider, amount);
             return (amount, 0);
         }
-        UserAccount storage userAccount = _get(map, user, provider);
-        userAccount.balance += amount;
-        return (userAccount.balance, userAccount.pendingRefund);
+        Account storage account = _get(map, user, provider);
+        account.balance += amount;
+        return (account.balance, account.pendingRefund);
     }
 
     function requestRefund(
-        UserAccountMap storage map,
+        AccountMap storage map,
         address user,
         address provider,
         uint amount
     ) internal returns (uint) {
-        UserAccount storage userAccount = _get(map, user, provider);
-        if ((userAccount.balance - userAccount.pendingRefund) < amount) {
+        Account storage account = _get(map, user, provider);
+        if ((account.balance - account.pendingRefund) < amount) {
             revert InsufficientBalance(user, provider);
         }
-        userAccount.refunds.push(Refund(amount, block.timestamp, false));
-        userAccount.pendingRefund += amount;
-        return userAccount.refunds.length - 1;
+        account.refunds.push(Refund(amount, block.timestamp, false));
+        account.pendingRefund += amount;
+        return account.refunds.length - 1;
     }
 
     function processRefund(
-        UserAccountMap storage map,
+        AccountMap storage map,
         address user,
         address provider,
         uint[] memory indices,
         uint lockTime
     ) internal returns (uint totalAmount, uint balance, uint pendingRefund) {
-        UserAccount storage userAccount = _get(map, user, provider);
+        Account storage account = _get(map, user, provider);
         totalAmount = 0;
 
         for (uint i = 0; i < indices.length; i++) {
             uint index = indices[i];
-            if (index >= userAccount.refunds.length) {
+            if (index >= account.refunds.length) {
                 revert RefundInvalid(user, provider, index);
             }
-            Refund storage refund = userAccount.refunds[index];
+            Refund storage refund = account.refunds[index];
             if (refund.processed) {
                 revert RefundProcessed(user, provider, index);
             }
             if (block.timestamp < refund.createdAt + lockTime) {
                 revert RefundLocked(user, provider, index);
             }
-            userAccount.balance -= refund.amount;
-            userAccount.pendingRefund -= refund.amount;
+            account.balance -= refund.amount;
+            account.pendingRefund -= refund.amount;
             refund.processed = true;
             totalAmount += refund.amount;
         }
 
-        balance = userAccount.balance;
-        pendingRefund = userAccount.pendingRefund;
+        balance = account.balance;
+        pendingRefund = account.pendingRefund;
     }
 
-    function _at(UserAccountMap storage map, uint index) internal view returns (UserAccount storage) {
+    function _at(AccountMap storage map, uint index) internal view returns (Account storage) {
         bytes32 key = map._keys.at(index);
         return map._values[key];
     }
 
-    function _contains(UserAccountMap storage map, bytes32 key) internal view returns (bool) {
+    function _contains(AccountMap storage map, bytes32 key) internal view returns (bool) {
         return map._keys.contains(key);
     }
 
-    function _length(UserAccountMap storage map) internal view returns (uint) {
+    function _length(AccountMap storage map) internal view returns (uint) {
         return map._keys.length();
     }
 
-    function _get(
-        UserAccountMap storage map,
-        address user,
-        address provider
-    ) internal view returns (UserAccount storage) {
+    function _get(AccountMap storage map, address user, address provider) internal view returns (Account storage) {
         bytes32 key = _key(user, provider);
-        UserAccount storage value = map._values[key];
+        Account storage value = map._values[key];
         if (!_contains(map, key)) {
-            revert UserAccountNotexists(user, provider);
+            revert AccountNotexists(user, provider);
         }
         return value;
     }
 
-    function _set(UserAccountMap storage map, bytes32 key, address user, address provider, uint balance) internal {
-        UserAccount storage userAccount = map._values[key];
-        userAccount.balance = balance;
-        userAccount.user = user;
-        userAccount.provider = provider;
+    function _set(AccountMap storage map, bytes32 key, address user, address provider, uint balance) internal {
+        Account storage account = map._values[key];
+        account.balance = balance;
+        account.user = user;
+        account.provider = provider;
         map._keys.add(key);
     }
 
