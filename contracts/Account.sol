@@ -13,6 +13,7 @@ struct Account {
 }
 
 struct Refund {
+    uint index;
     uint amount;
     uint createdAt;
     bool processed;
@@ -75,7 +76,7 @@ library AccountLibrary {
         if ((account.balance - account.pendingRefund) < amount) {
             revert InsufficientBalance(user, provider);
         }
-        account.refunds.push(Refund(amount, block.timestamp, false));
+        account.refunds.push(Refund(account.refunds.length, amount, block.timestamp, false));
         account.pendingRefund += amount;
         return account.refunds.length - 1;
     }
