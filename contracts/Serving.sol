@@ -30,6 +30,13 @@ contract Serving is Ownable, Initializable {
     );
     event ServiceRemoved(address indexed service, string indexed name);
 
+    error EmptyRequestTrace();
+    error NonceUsed(uint index, uint minimum, uint given);
+    error InvalidRequest(uint index);
+    error ServiceUpdatedBeforeSettle(uint index, uint serviceUpdatedAt, uint requestCreatedAt);
+    error InsufficientBalanceWhenSettle(uint amount, uint balance);
+    error InsufficientBalanceInPendingRefund(uint remainingFee, uint pendingRefund);
+
     function initialize(uint _locktime, address owner) public onlyInitializeOnce {
         _transferOwnership(owner);
         lockTime = _locktime;
@@ -101,27 +108,36 @@ contract Serving is Ownable, Initializable {
     }
 
     function _settleFees(Request[] memory requests) internal {
-        require(requests.length > 0, "Empty request trace");
+        if (requests.length == 0) {
+            revert EmptyRequestTrace();
+        }
         uint amount = 0;
         Account storage account = accountMap.getAccount(requests[0].userAddress, msg.sender);
         for (uint i = 0; i < requests.length; i++) {
             Request memory request = requests[i];
-
-            require(request.nonce > account.nonce, "Nonce used");
+            if (request.nonce <= account.nonce) {
+                revert NonceUsed(i, account.nonce + 1, request.nonce);
+            }
             account.nonce = request.nonce;
-
-            require(request.verify(msg.sender), "Invalid request");
-
+            if (!request.verify(msg.sender)) {
+                revert InvalidRequest(i);
+            }
             Service storage service = serviceMap.getService(msg.sender, request.serviceName);
-            require(service.updatedAt < request.createdAt, "Service updated");
+            if (service.updatedAt >= request.createdAt) {
+                revert ServiceUpdatedBeforeSettle(i, service.updatedAt, request.createdAt);
+            }
             amount += request.inputCount * service.inputPrice;
             amount += request.previousOutputCount * service.outputPrice;
         }
-        require(account.balance >= amount, "Insufficient balance");
+        if (account.balance < amount) {
+            revert InsufficientBalanceWhenSettle(amount, account.balance);
+        }
 
         if (amount > (account.balance - account.pendingRefund)) {
             uint remainingFee = amount - account.balance + account.pendingRefund;
-            require(account.pendingRefund >= remainingFee, "Insufficient balance in pendingRefund");
+            if (account.pendingRefund < remainingFee) {
+                revert InsufficientBalanceInPendingRefund(remainingFee, account.pendingRefund);
+            }
 
             account.pendingRefund -= remainingFee;
             for (int i = int(account.refunds.length - 1); i >= 0; i--) {

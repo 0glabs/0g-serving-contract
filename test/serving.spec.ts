@@ -282,19 +282,29 @@ describe("Serving", () => {
         });
 
         it("should failed due to double spending", async () => {
-            requestTrace[0].requests[1].nonce = requestTrace[0].requests[0].nonce;
+            const indexOfWrongRequest = 1;
+            const want = requestTrace[0].requests[indexOfWrongRequest].nonce;
+            const given = requestTrace[0].requests[0].nonce;
 
-            await expect(serving.connect(provider1).settleFees(requestTrace)).to.be.revertedWith("Nonce used");
+            requestTrace[0].requests[indexOfWrongRequest].nonce = given;
+            await expect(serving.connect(provider1).settleFees(requestTrace))
+                .to.be.revertedWithCustomError(serving, "NonceUsed")
+                .withArgs(indexOfWrongRequest, want, given);
         });
 
         it("should failed due to invalid nonce", async () => {
             requestTrace[0].requests[0].nonce = 99999;
 
-            await expect(serving.connect(provider1).settleFees(requestTrace)).to.be.revertedWith("Invalid request");
+            await expect(serving.connect(provider1).settleFees(requestTrace)).to.be.revertedWithCustomError(
+                serving,
+                "InvalidRequest"
+            );
         });
 
         it("should failed due to changes in the service after the request was made", async () => {
-            await time.increaseTo(requestCreatedAt + 1);
+            const serviceUpdatedAt = requestCreatedAt + 1;
+
+            await time.increaseTo(serviceUpdatedAt);
             const modifiedInputPrice = 10000;
             const tx = await serving
                 .connect(provider1)
@@ -307,10 +317,15 @@ describe("Serving", () => {
                 );
             await tx.wait();
 
-            await expect(serving.connect(provider1).settleFees(requestTrace)).to.be.revertedWith("Service updated");
+            // await expect(serving.connect(provider1).settleFees(requestTrace)).to.be.revertedWith("Service updated");
+
+            await expect(serving.connect(provider1).settleFees(requestTrace))
+                .to.be.revertedWithCustomError(serving, "ServiceUpdatedBeforeSettle")
+                .withArgs(0, serviceUpdatedAt, requestCreatedAt);
         });
 
         it("should failed due to insufficient balance", async () => {
+            let amount = 0;
             const excessiveRequestLength = user1InitialBalance / (provider1InputPrice + provider1OutputPrice) + 1;
             const excessiveRequests = [];
             for (let index = 0; index < excessiveRequestLength; index++) {
@@ -325,12 +340,13 @@ describe("Serving", () => {
                     index + 1
                 );
                 excessiveRequests.push(request);
+                amount += inputCount * provider1InputPrice + outputCount * provider1OutputPrice;
             }
             const excessiveRequestTrace = [{ requests: excessiveRequests }];
 
-            await expect(serving.connect(provider1).settleFees(excessiveRequestTrace)).to.be.revertedWith(
-                "Insufficient balance"
-            );
+            await expect(serving.connect(provider1).settleFees(excessiveRequestTrace))
+                .to.be.revertedWithCustomError(serving, "InsufficientBalanceWhenSettle")
+                .withArgs(amount, user1InitialBalance);
         });
     });
 });
