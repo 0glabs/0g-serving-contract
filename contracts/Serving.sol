@@ -134,7 +134,7 @@ contract Serving is Ownable, Initializable {
         }
 
         if (amount > (account.balance - account.pendingRefund)) {
-            uint remainingFee = amount - account.balance + account.pendingRefund;
+            uint remainingFee = amount - (account.balance - account.pendingRefund);
             if (account.pendingRefund < remainingFee) {
                 revert InsufficientBalanceInPendingRefund(remainingFee, account.pendingRefund);
             }
