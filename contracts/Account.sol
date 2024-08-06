@@ -9,6 +9,7 @@ struct Account {
     uint nonce;
     uint balance;
     uint pendingRefund;
+    uint[2] signer;
     Refund[] refunds;
 }
 
@@ -54,11 +55,12 @@ library AccountLibrary {
         AccountMap storage map,
         address user,
         address provider,
+        uint[2] calldata signer,
         uint amount
     ) internal returns (uint, uint) {
         bytes32 key = _key(user, provider);
         if (!_contains(map, key)) {
-            _set(map, key, user, provider, amount);
+            _set(map, key, user, provider, signer, amount);
             return (amount, 0);
         }
         Account storage account = _get(map, user, provider);
@@ -135,11 +137,19 @@ library AccountLibrary {
         return value;
     }
 
-    function _set(AccountMap storage map, bytes32 key, address user, address provider, uint balance) internal {
+    function _set(
+        AccountMap storage map,
+        bytes32 key,
+        address user,
+        address provider,
+        uint[2] calldata signer,
+        uint balance
+    ) internal {
         Account storage account = map._values[key];
         account.balance = balance;
         account.user = user;
         account.provider = provider;
+        account.signer = signer;
         map._keys.add(key);
     }
 

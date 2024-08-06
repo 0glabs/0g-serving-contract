@@ -9,10 +9,21 @@ import { beforeEach } from "mocha";
 import { Serving } from "../typechain-types";
 import {
     AccountStructOutput,
-    RequestStruct,
-    RequestTraceStruct,
     ServiceStructOutput,
-} from "../typechain-types/contracts/Serving";
+    VerifierInputStruct,
+} from "../typechain-types/contracts/Serving.sol/Serving";
+import { doubleSpendingInProof, doubleSpendingProofInputs } from "./zk_settlement_calldata/double_spending";
+import {
+    insufficientBalanceInProof,
+    insufficientBalanceProofInputs,
+} from "./zk_settlement_calldata/insufficient_balance";
+import {
+    privateKey,
+    publicKey,
+    succeedFee,
+    succeedInProof,
+    succeedProofInputs,
+} from "./zk_settlement_calldata/succeed";
 
 describe("Serving", () => {
     let serving: Serving;
@@ -22,7 +33,6 @@ describe("Serving", () => {
         provider1: HardhatEthersSigner,
         provider2: HardhatEthersSigner;
     let ownerAddress: string, user1Address: string, provider1Address: string, provider2Address: string;
-    let provider1createdAt: number;
 
     const ownerInitialBalance = 1000;
     const user1InitialBalance = 2000;
@@ -56,8 +66,8 @@ describe("Serving", () => {
 
     beforeEach(async () => {
         const initializations: ContractTransactionResponse[] = await Promise.all([
-            serving.depositFund(provider1Address, { value: ownerInitialBalance }),
-            serving.connect(user1).depositFund(provider1Address, { value: user1InitialBalance }),
+            serving.depositFund(provider1Address, publicKey, { value: ownerInitialBalance }),
+            serving.connect(user1).depositFund(provider1Address, publicKey, { value: user1InitialBalance }),
             serving
                 .connect(provider1)
                 .addOrUpdateService(
@@ -78,9 +88,7 @@ describe("Serving", () => {
                 ),
         ]);
 
-        const receipt = await initializations[2].wait();
-        const block = await ethers.provider.getBlock((receipt as TransactionReceipt).blockNumber);
-        provider1createdAt = (block as Block).timestamp;
+        await initializations[2].wait();
     });
 
     describe("Owner", () => {
@@ -103,7 +111,7 @@ describe("Serving", () => {
 
         it("should deposit fund and update balance", async () => {
             const depositAmount = 1000;
-            await serving.depositFund(provider1Address, { value: depositAmount });
+            await serving.depositFund(provider1Address, privateKey, { value: depositAmount });
 
             const account = await serving.getAccount(ownerAddress, provider1);
             expect(account.balance).to.equal(BigInt(ownerInitialBalance + depositAmount));
@@ -230,151 +238,41 @@ describe("Serving", () => {
     });
 
     describe("Settle fees", () => {
-        let requestTrace: RequestTraceStruct[];
-        let requestCreatedAt: number;
-        const requestLength = 3;
-        const inputCount = 1;
-        const outputCount = 1;
-        const fee =
-            requestLength * inputCount * provider1InputPrice + requestLength * outputCount * provider1OutputPrice;
-
-        beforeEach(async () => {
-            requestCreatedAt = provider1createdAt + 1;
-            const requestsFromOwner = [];
-            for (let index = 0; index < requestLength; index++) {
-                const request = await getSignedRequest(
-                    owner,
-                    ownerAddress,
-                    provider1Address,
-                    provider1ServiceName,
-                    inputCount,
-                    outputCount,
-                    requestCreatedAt,
-                    index + 1
-                );
-                requestsFromOwner.push(request);
-            }
-
-            const requestsFromUser1 = [];
-            for (let index = 0; index < requestLength; index++) {
-                const request = await getSignedRequest(
-                    user1,
-                    user1Address,
-                    provider1Address,
-                    provider1ServiceName,
-                    inputCount,
-                    outputCount,
-                    requestCreatedAt,
-                    index + 1
-                );
-                requestsFromUser1.push(request);
-            }
-
-            requestTrace = [{ requests: requestsFromOwner }, { requests: requestsFromUser1 }];
-        });
-
         it("should succeed", async () => {
-            await expect(serving.connect(provider1).settleFees(requestTrace))
+            const verifierInput: VerifierInputStruct = {
+                inProof: succeedInProof,
+                proofInputs: succeedProofInputs,
+                numChunks: BigInt(2),
+                segmentSize: [BigInt(7), BigInt(7)],
+            };
+
+            await expect(serving.connect(provider1).settleFees(verifierInput))
                 .to.emit(serving, "BalanceUpdated")
-                .withArgs(ownerAddress, provider1, ownerInitialBalance - fee, 0)
+                .withArgs(ownerAddress, provider1Address, ownerInitialBalance - succeedFee, 0)
                 .and.to.emit(serving, "BalanceUpdated")
-                .withArgs(user1Address, provider1, user1InitialBalance - fee, 0);
+                .withArgs(user1Address, provider1Address, user1InitialBalance - succeedFee, 0);
         });
 
         it("should failed due to double spending", async () => {
-            const indexOfWrongRequest = 1;
-            const want = requestTrace[0].requests[indexOfWrongRequest].nonce;
-            const given = requestTrace[0].requests[0].nonce;
+            const verifierInput: VerifierInputStruct = {
+                inProof: doubleSpendingInProof,
+                proofInputs: doubleSpendingProofInputs,
+                numChunks: BigInt(2),
+                segmentSize: [BigInt(14)],
+            };
 
-            requestTrace[0].requests[indexOfWrongRequest].nonce = given;
-            await expect(serving.connect(provider1).settleFees(requestTrace))
-                .to.be.revertedWithCustomError(serving, "NonceUsed")
-                .withArgs(indexOfWrongRequest, want, given);
-        });
-
-        it("should failed due to invalid nonce", async () => {
-            requestTrace[0].requests[0].nonce = 99999;
-
-            await expect(serving.connect(provider1).settleFees(requestTrace)).to.be.revertedWithCustomError(
-                serving,
-                "InvalidRequest"
-            );
-        });
-
-        it("should failed due to changes in the service after the request was made", async () => {
-            const serviceUpdatedAt = requestCreatedAt + 1;
-
-            await time.increaseTo(serviceUpdatedAt);
-            const modifiedInputPrice = 10000;
-            const tx = await serving
-                .connect(provider1)
-                .addOrUpdateService(
-                    provider1ServiceName,
-                    provider1ServiceType,
-                    provider1Url,
-                    modifiedInputPrice,
-                    provider1OutputPrice
-                );
-            await tx.wait();
-
-            // await expect(serving.connect(provider1).settleFees(requestTrace)).to.be.revertedWith("Service updated");
-
-            await expect(serving.connect(provider1).settleFees(requestTrace))
-                .to.be.revertedWithCustomError(serving, "ServiceUpdatedBeforeSettle")
-                .withArgs(0, serviceUpdatedAt, requestCreatedAt);
+            await expect(serving.connect(provider1).settleFees(verifierInput)).to.be.reverted;
         });
 
         it("should failed due to insufficient balance", async () => {
-            let amount = 0;
-            const excessiveRequestLength = user1InitialBalance / (provider1InputPrice + provider1OutputPrice) + 1;
-            const excessiveRequests = [];
-            for (let index = 0; index < excessiveRequestLength; index++) {
-                const request = await getSignedRequest(
-                    user1,
-                    user1Address,
-                    provider1Address,
-                    provider1ServiceName,
-                    inputCount,
-                    outputCount,
-                    requestCreatedAt,
-                    index + 1
-                );
-                excessiveRequests.push(request);
-                amount += inputCount * provider1InputPrice + outputCount * provider1OutputPrice;
-            }
-            const excessiveRequestTrace = [{ requests: excessiveRequests }];
+            const verifierInput: VerifierInputStruct = {
+                inProof: insufficientBalanceInProof,
+                proofInputs: insufficientBalanceProofInputs,
+                numChunks: BigInt(1),
+                segmentSize: [BigInt(7)],
+            };
 
-            await expect(serving.connect(provider1).settleFees(excessiveRequestTrace))
-                .to.be.revertedWithCustomError(serving, "InsufficientBalanceWhenSettle")
-                .withArgs(amount, user1InitialBalance);
+            await expect(serving.connect(provider1).settleFees(verifierInput)).to.be.reverted;
         });
     });
 });
-
-async function getSignedRequest(
-    signer: HardhatEthersSigner,
-    userAddress: string,
-    provider: string,
-    serviceName: string,
-    inputCount: number,
-    previousOutputCount: number,
-    createdAt: number,
-    nonce: number
-): Promise<RequestStruct> {
-    const hash = ethers.solidityPackedKeccak256(
-        ["address", "address", "string", "uint", "uint", "uint", "uint"],
-        [provider, userAddress, serviceName, inputCount, previousOutputCount, nonce, createdAt]
-    );
-
-    const signature = await signer.signMessage(ethers.toBeArray(hash));
-
-    return {
-        userAddress,
-        serviceName,
-        inputCount,
-        previousOutputCount,
-        createdAt,
-        nonce,
-        signature,
-    };
-}
