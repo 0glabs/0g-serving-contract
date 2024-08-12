@@ -6,7 +6,8 @@ import { HardhatRuntimeEnvironment } from "hardhat/types";
 import { beforeEach } from "mocha";
 import { upgradeImplementation } from "../src/utils/utils";
 import { Serving, ServingV2 } from "../typechain-types";
-import { AccountStructOutput, ServiceStructOutput } from "../typechain-types/contracts/Serving";
+import { AccountStructOutput, ServiceStructOutput } from "../typechain-types/contracts/Serving.sol/Serving";
+import { publicKey } from "./zk_settlement_calldata/succeed";
 
 describe("Upgrade Serving", () => {
     let serving: Serving, servingV2: ServingV2;
@@ -48,10 +49,11 @@ describe("Upgrade Serving", () => {
         serving = await ethers.getContractAt("Serving", servingDeployment.address);
 
         await Promise.all([
-            serving.depositFund(provider1Address, { value: ownerInitialBalance }),
-            serving
-                .connect(user1)
-                .depositFund(provider1Address, { value: user1InitialBalance, from: await user1.getAddress() }),
+            serving.depositFund(provider1Address, publicKey, { value: ownerInitialBalance }),
+            serving.connect(user1).depositFund(provider1Address, publicKey, {
+                value: user1InitialBalance,
+                from: await user1.getAddress(),
+            }),
             serving
                 .connect(provider1)
                 .addOrUpdateService(

@@ -42,6 +42,7 @@ class ContractMeta<T> {
 
 export const CONTRACTS = {
     Serving: new ContractMeta(Factories.Serving__factory),
+    Verifier: new ContractMeta(Factories.Wrapper__factory),
 } as const;
 
 const UPGRADEABLE_BEACON = "UpgradeableBeacon";
@@ -87,7 +88,7 @@ export async function deployInBeaconProxy(
     });
     const beacon = await hre.ethers.getContract(`${contract.name}Beacon`);
     // deploy proxy
-    const servingProxy = await deployments.deploy(contract.name, {
+    const proxy = await deployments.deploy(contract.name, {
         from: deployer,
         contract: BEACON_PROXY,
         args: [await beacon.getAddress(), []],
@@ -98,7 +99,7 @@ export async function deployInBeaconProxy(
     const proxyArtifact = await deployments.getArtifact(contract.name);
 
     await deployments.save("UpgradeableBeacon", { ...beaconArtifact, address: upgradeableBeacon.address });
-    await deployments.save(contract.name, { ...proxyArtifact, address: servingProxy.address });
+    await deployments.save(contract.name, { ...proxyArtifact, address: proxy.address });
 }
 
 export async function upgradeImplementation(

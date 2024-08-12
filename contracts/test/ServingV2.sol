@@ -6,14 +6,29 @@ import "@openzeppelin/contracts/utils/structs/EnumerableMap.sol";
 import "../utils/Initializable.sol";
 import "../Account.sol";
 import "../Service.sol";
-import "../Request.sol";
+
+struct VerifierInput {
+    uint[] inProof;
+    uint[] proofInputs;
+    uint numChunks;
+    uint[] segmentSize;
+}
+
+interface IBatchVerifier {
+    function verifyProof(
+        uint256[] calldata inProof,
+        uint256[] calldata proofInputs,
+        uint256 numProofs
+    ) external view returns (bool);
+}
 
 contract ServingV2 is Ownable, Initializable {
     using AccountLibrary for AccountLibrary.AccountMap;
     using ServiceLibrary for ServiceLibrary.ServiceMap;
-    using RequestLibrary for Request;
 
     uint public lockTime;
+    address public batchVerifierAddress;
+    IBatchVerifier batchVerifier;
     AccountLibrary.AccountMap private accountMap;
     ServiceLibrary.ServiceMap private serviceMap;
 
@@ -30,16 +45,13 @@ contract ServingV2 is Ownable, Initializable {
     );
     event ServiceRemoved(address indexed service, string indexed name);
 
-    error EmptyRequestTrace();
-    error NonceUsed(uint index, uint minimum, uint given);
-    error InvalidRequest(uint index);
-    error ServiceUpdatedBeforeSettle(uint index, uint serviceUpdatedAt, uint requestCreatedAt);
-    error InsufficientBalanceWhenSettle(uint amount, uint balance);
-    error InsufficientBalanceInPendingRefund(uint remainingFee, uint pendingRefund);
+    error InvalidProofInputs(string reason);
 
-    function initialize(uint _locktime, address owner) public onlyInitializeOnce {
+    function initialize(uint _locktime, address _batchVerifierAddress, address owner) public onlyInitializeOnce {
         _transferOwnership(owner);
         lockTime = _locktime;
+        batchVerifierAddress = _batchVerifierAddress;
+        batchVerifier = IBatchVerifier(batchVerifierAddress);
     }
 
     function updateLockTime(uint _locktime) public onlyOwner {
@@ -54,8 +66,8 @@ contract ServingV2 is Ownable, Initializable {
         return accountMap.getAllAccounts();
     }
 
-    function depositFund(address provider) external payable {
-        (uint balance, uint pendingRefund) = accountMap.depositFund(msg.sender, provider, msg.value);
+    function depositFund(address provider, uint[2] calldata signer) external payable {
+        (uint balance, uint pendingRefund) = accountMap.depositFund(msg.sender, provider, signer, msg.value);
         emit BalanceUpdated(msg.sender, provider, balance, pendingRefund);
     }
 
@@ -100,43 +112,69 @@ contract ServingV2 is Ownable, Initializable {
         emit ServiceRemoved(msg.sender, name);
     }
 
-    function settleFees(RequestTrace[] memory traces) external {
-        for (uint i = 0; i < traces.length; i++) {
-            RequestTrace memory trace = traces[i];
-            _settleFees(trace.requests);
+    function settleFees(VerifierInput calldata verifierInput) external {
+        bool zkPassed = batchVerifier.verifyProof(
+            verifierInput.inProof,
+            verifierInput.proofInputs,
+            verifierInput.numChunks
+        );
+        if (!zkPassed) {
+            revert InvalidProofInputs("ZK settlement validation failed");
+        }
+
+        uint[] memory inputs = verifierInput.proofInputs;
+        uint start = 0;
+        uint expectedProviderAddress = uint(uint160(msg.sender));
+
+        for (uint segmentIdx = 0; segmentIdx < verifierInput.segmentSize.length; segmentIdx++) {
+            uint segmentSize = verifierInput.segmentSize[segmentIdx];
+            uint end = start + segmentSize;
+
+            uint totalCosts = 0;
+            uint expectedUserAddress = inputs[start + 2];
+            uint firstRequestNonce = inputs[start + 5];
+            Account storage account = accountMap.getAccount(address(uint160(expectedUserAddress)), msg.sender);
+
+            if (account.nonce > firstRequestNonce) {
+                revert InvalidProofInputs("initial nonce is incorrect");
+            }
+            for (uint chunkIdx = start; chunkIdx < end; chunkIdx += 7) {
+                uint userAddress = inputs[chunkIdx + 2];
+                uint providerAddress = inputs[chunkIdx + 3];
+                uint lastRequestNonce = inputs[chunkIdx + 5];
+                uint cost = inputs[chunkIdx + 6];
+                uint nextChunkFirstRequestNonce = chunkIdx + 11 < end ? inputs[chunkIdx + 11] : 0;
+
+                if (nextChunkFirstRequestNonce != 0 && lastRequestNonce >= nextChunkFirstRequestNonce) {
+                    revert InvalidProofInputs("nonce overlapped");
+                }
+
+                if (userAddress != expectedUserAddress || providerAddress != expectedProviderAddress) {
+                    revert InvalidProofInputs(
+                        userAddress != expectedUserAddress
+                            ? "user address is incorrect"
+                            : "provider address is incorrect"
+                    );
+                }
+
+                totalCosts += cost;
+            }
+            if (account.balance < totalCosts) {
+                revert InvalidProofInputs("insufficient balance");
+            }
+            _settleFees(account, totalCosts);
+            start = end;
+        }
+        if (start != inputs.length) {
+            revert InvalidProofInputs("array segmentSize sum mismatches public input length");
         }
     }
 
-    function _settleFees(Request[] memory requests) internal {
-        if (requests.length == 0) {
-            revert EmptyRequestTrace();
-        }
-        uint amount = 0;
-        Account storage account = accountMap.getAccount(requests[0].userAddress, msg.sender);
-        for (uint i = 0; i < requests.length; i++) {
-            Request memory request = requests[i];
-            if (request.nonce <= account.nonce) {
-                revert NonceUsed(i, account.nonce + 1, request.nonce);
-            }
-            account.nonce = request.nonce;
-            if (!request.verify(msg.sender)) {
-                revert InvalidRequest(i);
-            }
-            Service storage service = serviceMap.getService(msg.sender, request.serviceName);
-            if (service.updatedAt >= request.createdAt) {
-                revert ServiceUpdatedBeforeSettle(i, service.updatedAt, request.createdAt);
-            }
-            amount += request.inputCount * service.inputPrice;
-            amount += request.previousOutputCount * service.outputPrice;
-        }
-        if (account.balance < amount) {
-            revert InsufficientBalanceWhenSettle(amount, account.balance);
-        }
-
+    function _settleFees(Account storage account, uint amount) private {
         if (amount > (account.balance - account.pendingRefund)) {
             uint remainingFee = amount - (account.balance - account.pendingRefund);
             if (account.pendingRefund < remainingFee) {
-                revert InsufficientBalanceInPendingRefund(remainingFee, account.pendingRefund);
+                revert InvalidProofInputs("insufficient balance in pendingRefund");
             }
 
             account.pendingRefund -= remainingFee;
@@ -159,12 +197,8 @@ contract ServingV2 is Ownable, Initializable {
             }
         }
         account.balance -= amount;
-        emit BalanceUpdated(requests[0].userAddress, msg.sender, account.balance, account.pendingRefund);
+        emit BalanceUpdated(account.user, msg.sender, account.balance, account.pendingRefund);
         payable(msg.sender).transfer(amount);
-    }
-
-    function verify(Request memory request) external view returns (bool) {
-        return request.verify(msg.sender);
     }
 
     function getAllData() public view returns (Account[] memory accounts, Service[] memory services) {
