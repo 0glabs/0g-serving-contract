@@ -7,10 +7,11 @@
         "test": "hardhat test",
         "deploy": "npx hardhat deploy --tags Serving --network",
         "lint": "yarn lint:sol && yarn lint:ts",
-        "lint:sol": "solhint 'contracts/**/*.sol'",
+        "lint:sol": "solhint 'contracts/**/*.sol' --ignore-path .solhintignore",
         "lint:ts": "eslint 'test/**/*.ts' '*.ts' --max-warnings 0 --fix",
         "fmt:sol": "prettier 'contracts/**/*.sol' -w",
-        "fmt:ts": "prettier 'test/**/*.ts' '*.ts' -w"
+        "fmt:ts": "prettier 'test/**/*.ts' '*.ts' -w",
+        "testGolden": "npx ts-node test/zk_settlement_calldata/generate_golden_file.ts"
     },
     "devDependencies": {
         "@eslint/js": "^9.4.0",
@@ -29,6 +30,7 @@
         "@typechain/hardhat": "^9.1.0",
         "@types/chai": "^4.3.3",
         "@types/mocha": "^9.1.1",
+        "@types/node": "^22.2.0",
         "@typescript-eslint/eslint-plugin": "6.21.0",
         "@typescript-eslint/parser": "6.21.0",
         "chai": "^4.3.6",

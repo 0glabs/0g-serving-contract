@@ -16,9 +16,9 @@ struct VerifierInput {
 
 interface IBatchVerifier {
     function verifyBatch(
-        uint256[] calldata inProof,
-        uint256[] calldata proofInputs,
-        uint256 numProofs
+        uint[] calldata inProof,
+        uint[] calldata proofInputs,
+        uint numProofs
     ) external view returns (bool);
 }
 
@@ -28,7 +28,7 @@ contract Serving is Ownable, Initializable {
 
     uint public lockTime;
     address public batchVerifierAddress;
-    IBatchVerifier batchVerifier;
+    IBatchVerifier private batchVerifier;
     AccountLibrary.AccountMap private accountMap;
     ServiceLibrary.ServiceMap private serviceMap;
 

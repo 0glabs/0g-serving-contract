@@ -7,7 +7,7 @@ import { beforeEach } from "mocha";
 import { upgradeImplementation } from "../src/utils/utils";
 import { Serving, ServingV2 } from "../typechain-types";
 import { AccountStructOutput, ServiceStructOutput } from "../typechain-types/contracts/Serving.sol/Serving";
-import { publicKey } from "./zk_settlement_calldata/succeed";
+import { publicKey } from "./zk_settlement_calldata/golden";
 
 describe("Upgrade Serving", () => {
     let serving: Serving, servingV2: ServingV2;

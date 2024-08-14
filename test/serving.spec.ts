@@ -12,18 +12,12 @@ import {
     ServiceStructOutput,
     VerifierInputStruct,
 } from "../typechain-types/contracts/Serving.sol/Serving";
-import { doubleSpendingInProof, doubleSpendingProofInputs } from "./zk_settlement_calldata/double_spending";
+import { privateKey, publicKey, succeedFee, succeedInProof, succeedProofInputs } from "./zk_settlement_calldata/golden";
+import { doubleSpendingInProof, doubleSpendingProofInputs } from "./zk_settlement_calldata/golden/double_spending";
 import {
     insufficientBalanceInProof,
     insufficientBalanceProofInputs,
-} from "./zk_settlement_calldata/insufficient_balance";
-import {
-    privateKey,
-    publicKey,
-    succeedFee,
-    succeedInProof,
-    succeedProofInputs,
-} from "./zk_settlement_calldata/succeed";
+} from "./zk_settlement_calldata/golden/insufficient_balance";
 
 describe("Serving", () => {
     let serving: Serving;
