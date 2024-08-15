@@ -5,9 +5,9 @@ import { Deployment } from "hardhat-deploy/types";
 import { HardhatRuntimeEnvironment } from "hardhat/types";
 import { beforeEach } from "mocha";
 import { upgradeImplementation } from "../src/utils/utils";
+import { publicKey } from "../src/utils/zk_settlement_calldata/golden";
 import { Serving, ServingV2 } from "../typechain-types";
 import { AccountStructOutput, ServiceStructOutput } from "../typechain-types/contracts/Serving.sol/Serving";
-import { publicKey } from "./zk_settlement_calldata/golden";
 
 describe("Upgrade Serving", () => {
     let serving: Serving, servingV2: ServingV2;

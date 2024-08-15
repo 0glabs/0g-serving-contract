@@ -6,18 +6,27 @@ import { Block, ContractTransactionResponse, TransactionReceipt } from "ethers";
 import { deployments, ethers } from "hardhat";
 import { Deployment } from "hardhat-deploy/types";
 import { beforeEach } from "mocha";
+import {
+    privateKey,
+    publicKey,
+    succeedFee,
+    succeedInProof,
+    succeedProofInputs,
+} from "../src/utils/zk_settlement_calldata/golden";
+import {
+    doubleSpendingInProof,
+    doubleSpendingProofInputs,
+} from "../src/utils/zk_settlement_calldata/golden/double_spending";
+import {
+    insufficientBalanceInProof,
+    insufficientBalanceProofInputs,
+} from "../src/utils/zk_settlement_calldata/golden/insufficient_balance";
 import { Serving } from "../typechain-types";
 import {
     AccountStructOutput,
     ServiceStructOutput,
     VerifierInputStruct,
 } from "../typechain-types/contracts/Serving.sol/Serving";
-import { privateKey, publicKey, succeedFee, succeedInProof, succeedProofInputs } from "./zk_settlement_calldata/golden";
-import { doubleSpendingInProof, doubleSpendingProofInputs } from "./zk_settlement_calldata/golden/double_spending";
-import {
-    insufficientBalanceInProof,
-    insufficientBalanceProofInputs,
-} from "./zk_settlement_calldata/golden/insufficient_balance";
 
 describe("Serving", () => {
     let serving: Serving;
