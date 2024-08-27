@@ -65,6 +65,7 @@ library AccountLibrary {
         }
         Account storage account = _get(map, user, provider);
         account.balance += amount;
+        account.signer = signer;
         return (account.balance, account.pendingRefund);
     }
 
