@@ -16,7 +16,8 @@ COPY . .
 
 COPY ./intergrate/entrypoint.sh /usr/local/bin
 COPY ./intergrate/deploy.sh /usr/local/bin
-RUN chmod +x /usr/local/bin/deploy.sh /usr/local/bin/entrypoint.sh
+COPY ./intergrate/healthcheck.sh /usr/local/bin/healthcheck.sh
+RUN chmod +x /usr/local/bin/deploy.sh /usr/local/bin/entrypoint.sh /usr/local/bin/healthcheck.sh
 
 ENTRYPOINT ["/bin/sh", "/usr/local/bin/entrypoint.sh"]
 
