@@ -86,17 +86,10 @@ const generateCalldata = async (
     signatures: string[][]
 ): Promise<CallData> => {
     const proofInput = { requests, l, pubkey, signatures };
-    const proofInputResponse = await fetch(host + "/proof-input", {
+    const calldataResponse = await fetch(host + "/solidity-calldata-combined?backend=rust", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(proofInput),
-    });
-    const proofInputData = await proofInputResponse.json();
-
-    const calldataResponse = await fetch(host + "/solidity-calldata", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(proofInputData),
     });
     const calldataData = await calldataResponse.json();
     return calldataData;
