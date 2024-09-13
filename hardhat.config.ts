@@ -72,7 +72,7 @@ const config: HardhatUserConfig = {
             ],
         },
         zg: {
-            url: "https://rpc-testnet.0g.ai",
+            url: "https://evmrpc-testnet.0g.ai",
             accounts: [ZG_PRIVATE_KEY],
             chainId: 16600,
         },
