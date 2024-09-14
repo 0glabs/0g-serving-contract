@@ -6,13 +6,7 @@ import { Block, ContractTransactionResponse, TransactionReceipt } from "ethers";
 import { deployments, ethers } from "hardhat";
 import { Deployment } from "hardhat-deploy/types";
 import { beforeEach } from "mocha";
-import {
-    privateKey,
-    publicKey,
-    succeedFee,
-    succeedInProof,
-    succeedProofInputs,
-} from "../src/utils/zk_settlement_calldata/golden";
+import { publicKey, succeedFee, succeedInProof, succeedProofInputs } from "../src/utils/zk_settlement_calldata/golden";
 import {
     doubleSpendingInProof,
     doubleSpendingProofInputs,
@@ -114,7 +108,7 @@ describe("Serving", () => {
 
         it("should deposit fund and update balance", async () => {
             const depositAmount = 1000;
-            await serving.depositFund(provider1Address, privateKey, { value: depositAmount });
+            await serving.depositFund(provider1Address, publicKey, { value: depositAmount });
 
             const account = await serving.getAccount(ownerAddress, provider1);
             expect(account.balance).to.equal(BigInt(ownerInitialBalance + depositAmount));

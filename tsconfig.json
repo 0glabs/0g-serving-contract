@@ -13,7 +13,8 @@
         "./typechain-types",
         "src/deploy",
         "deploy/deploy.ts",
-        "src/utils/zk_settlement_calldata"
+        "src/utils/zk_settlement_calldata",
+        "src/deploy/upgrade_serving.ts"
     ],
     "files": ["./hardhat.config.ts"]
 }

@@ -6,6 +6,7 @@
         "compile": "hardhat compile",
         "test": "hardhat test",
         "deploy": "npx hardhat deploy --tags Serving --network",
+        "upgradeContract": "npx hardhat deploy --tags Upgrade --network",
         "lint": "yarn lint:sol && yarn lint:ts",
         "lint:sol": "solhint 'contracts/**/*.sol' --ignore-path .solhintignore",
         "lint:ts": "eslint 'test/**/*.ts' '*.ts' --max-warnings 0 --fix",
