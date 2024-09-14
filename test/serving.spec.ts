@@ -63,8 +63,8 @@ describe("Serving", () => {
 
     beforeEach(async () => {
         const initializations: ContractTransactionResponse[] = await Promise.all([
-            serving.depositFund(provider1Address, publicKey, { value: ownerInitialBalance }),
-            serving.connect(user1).depositFund(provider1Address, publicKey, { value: user1InitialBalance }),
+            serving.addAccount(provider1Address, publicKey, { value: ownerInitialBalance }),
+            serving.connect(user1).addAccount(provider1Address, publicKey, { value: user1InitialBalance }),
             serving
                 .connect(provider1)
                 .addOrUpdateService(
@@ -108,7 +108,7 @@ describe("Serving", () => {
 
         it("should deposit fund and update balance", async () => {
             const depositAmount = 1000;
-            await serving.depositFund(provider1Address, publicKey, { value: depositAmount });
+            await serving.depositFund(provider1Address, { value: depositAmount });
 
             const account = await serving.getAccount(ownerAddress, provider1);
             expect(account.balance).to.equal(BigInt(ownerInitialBalance + depositAmount));

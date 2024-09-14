@@ -24,6 +24,7 @@ library AccountLibrary {
     using EnumerableSet for EnumerableSet.Bytes32Set;
 
     error AccountNotexists(address user, address provider);
+    error AccountExists(address user, address provider);
     error InsufficientBalance(address user, address provider);
     error RefundInvalid(address user, address provider, uint index);
     error RefundProcessed(address user, address provider, uint index);
@@ -51,7 +52,7 @@ library AccountLibrary {
         }
     }
 
-    function depositFund(
+    function addAccount(
         AccountMap storage map,
         address user,
         address provider,
@@ -59,13 +60,25 @@ library AccountLibrary {
         uint amount
     ) internal returns (uint, uint) {
         bytes32 key = _key(user, provider);
+        if (_contains(map, key)) {
+            revert AccountExists(user, provider);
+        }
+        _set(map, key, user, provider, signer, amount);
+        return (amount, 0);
+    }
+
+    function depositFund(
+        AccountMap storage map,
+        address user,
+        address provider,
+        uint amount
+    ) internal returns (uint, uint) {
+        bytes32 key = _key(user, provider);
         if (!_contains(map, key)) {
-            _set(map, key, user, provider, signer, amount);
-            return (amount, 0);
+            revert AccountNotexists(user, provider);
         }
         Account storage account = _get(map, user, provider);
         account.balance += amount;
-        account.signer = signer;
         return (account.balance, account.pendingRefund);
     }
 

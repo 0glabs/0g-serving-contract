@@ -71,8 +71,13 @@ contract Serving is Ownable, Initializable {
         return accountMap.getAllAccounts();
     }
 
-    function depositFund(address provider, uint[2] calldata signer) external payable {
-        (uint balance, uint pendingRefund) = accountMap.depositFund(msg.sender, provider, signer, msg.value);
+    function addAccount(address provider, uint[2] calldata signer) external payable {
+        (uint balance, uint pendingRefund) = accountMap.addAccount(msg.sender, provider, signer, msg.value);
+        emit BalanceUpdated(msg.sender, provider, balance, pendingRefund);
+    }
+
+    function depositFund(address provider) external payable {
+        (uint balance, uint pendingRefund) = accountMap.depositFund(msg.sender, provider, msg.value);
         emit BalanceUpdated(msg.sender, provider, balance, pendingRefund);
     }
 
@@ -140,7 +145,9 @@ contract Serving is Ownable, Initializable {
             uint firstRequestNonce = inputs[start + 2];
             uint lastRequestNonce = inputs[start + 3];
             Account storage account = accountMap.getAccount(address(uint160(expectedUserAddress)), msg.sender);
-
+            if (account.signer[0] != inputs[start + 5] || account.signer[1] != inputs[start + 6]) {
+                revert InvalidProofInputs("signer key is incorrect");
+            }
             if (account.nonce > firstRequestNonce) {
                 revert InvalidProofInputs("initial nonce is incorrect");
             }

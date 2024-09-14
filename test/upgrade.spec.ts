@@ -49,8 +49,8 @@ describe("Upgrade Serving", () => {
         serving = await ethers.getContractAt("Serving", servingDeployment.address);
 
         await Promise.all([
-            serving.depositFund(provider1Address, publicKey, { value: ownerInitialBalance }),
-            serving.connect(user1).depositFund(provider1Address, publicKey, {
+            serving.addAccount(provider1Address, publicKey, { value: ownerInitialBalance }),
+            serving.connect(user1).addAccount(provider1Address, publicKey, {
                 value: user1InitialBalance,
                 from: await user1.getAddress(),
             }),

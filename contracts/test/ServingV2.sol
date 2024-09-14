@@ -15,7 +15,7 @@ struct VerifierInput {
 }
 
 interface IBatchVerifier {
-    function verifyProof(
+    function verifyBatch(
         uint[] calldata inProof,
         uint[] calldata proofInputs,
         uint numProofs
@@ -58,6 +58,11 @@ contract ServingV2 is Ownable, Initializable {
         lockTime = _locktime;
     }
 
+    function updateBatchVerifierAddress(address _batchVerifierAddress) public onlyOwner {
+        batchVerifierAddress = _batchVerifierAddress;
+        batchVerifier = IBatchVerifier(batchVerifierAddress);
+    }
+
     function getAccount(address user, address provider) public view returns (Account memory) {
         return accountMap.getAccount(user, provider);
     }
@@ -66,8 +71,13 @@ contract ServingV2 is Ownable, Initializable {
         return accountMap.getAllAccounts();
     }
 
-    function depositFund(address provider, uint[2] calldata signer) external payable {
-        (uint balance, uint pendingRefund) = accountMap.depositFund(msg.sender, provider, signer, msg.value);
+    function addAccount(address provider, uint[2] calldata signer) external payable {
+        (uint balance, uint pendingRefund) = accountMap.addAccount(msg.sender, provider, signer, msg.value);
+        emit BalanceUpdated(msg.sender, provider, balance, pendingRefund);
+    }
+
+    function depositFund(address provider) external payable {
+        (uint balance, uint pendingRefund) = accountMap.depositFund(msg.sender, provider, msg.value);
         emit BalanceUpdated(msg.sender, provider, balance, pendingRefund);
     }
 
@@ -113,7 +123,7 @@ contract ServingV2 is Ownable, Initializable {
     }
 
     function settleFees(VerifierInput calldata verifierInput) external {
-        bool zkPassed = batchVerifier.verifyProof(
+        bool zkPassed = batchVerifier.verifyBatch(
             verifierInput.inProof,
             verifierInput.proofInputs,
             verifierInput.numChunks
@@ -131,19 +141,22 @@ contract ServingV2 is Ownable, Initializable {
             uint end = start + segmentSize;
 
             uint totalCosts = 0;
-            uint expectedUserAddress = inputs[start + 2];
-            uint firstRequestNonce = inputs[start + 5];
+            uint expectedUserAddress = inputs[start];
+            uint firstRequestNonce = inputs[start + 2];
+            uint lastRequestNonce = inputs[start + 3];
             Account storage account = accountMap.getAccount(address(uint160(expectedUserAddress)), msg.sender);
-
+            if (account.signer[0] != inputs[start + 5] || account.signer[1] != inputs[start + 6]) {
+                revert InvalidProofInputs("signer key is incorrect");
+            }
             if (account.nonce > firstRequestNonce) {
                 revert InvalidProofInputs("initial nonce is incorrect");
             }
             for (uint chunkIdx = start; chunkIdx < end; chunkIdx += 7) {
-                uint userAddress = inputs[chunkIdx + 2];
-                uint providerAddress = inputs[chunkIdx + 3];
-                uint lastRequestNonce = inputs[chunkIdx + 5];
-                uint cost = inputs[chunkIdx + 6];
-                uint nextChunkFirstRequestNonce = chunkIdx + 11 < end ? inputs[chunkIdx + 11] : 0;
+                uint userAddress = inputs[chunkIdx];
+                uint providerAddress = inputs[chunkIdx + 1];
+                lastRequestNonce = inputs[chunkIdx + 3];
+                uint cost = inputs[chunkIdx + 4];
+                uint nextChunkFirstRequestNonce = chunkIdx + 9 < end ? inputs[chunkIdx + 9] : 0;
 
                 if (nextChunkFirstRequestNonce != 0 && lastRequestNonce >= nextChunkFirstRequestNonce) {
                     revert InvalidProofInputs("nonce overlapped");
@@ -164,6 +177,7 @@ contract ServingV2 is Ownable, Initializable {
             }
             _settleFees(account, totalCosts);
             start = end;
+            account.nonce = lastRequestNonce;
         }
         if (start != inputs.length) {
             revert InvalidProofInputs("array segmentSize sum mismatches public input length");
