@@ -2,7 +2,7 @@
    generate_golden_file.ts generates inputs for `Settle fees` section in serving.spec.ts:
    it constructs input for each test case in advance and transforms these
    constructed inputs into inputs for the settleFees function in the contract
-   via the prover agent (https://github.com/0glabs/zk-settlement).
+   via the prover broker (https://github.com/0glabs/zk-settlement).
  
    Three accounts are involved in the test, including owner, user1 and provider1. 
    Owner and user1 are users generating signed requests, where owner is the deployer of the contract, 
@@ -16,10 +16,10 @@
    user1: 0x70997970C51812dc3A010C7d01b50e0d17dc79C8
    provider1: 0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC
 
-   The working process of generate_golden_file.ts can be described as a sequence of calls to prover agent,
-   whose host is hardcoded as `http://localhost:3000`. Thus, make sure a prover agent is running before using 
+   The working process of generate_golden_file.ts can be described as a sequence of calls to prover broker,
+   whose host is hardcoded as `http://localhost:3000`. Thus, make sure a prover broker is running before using 
    this script. A typical process describing the generation of the inputs for a successful `Settle fees` 
-   is like this, where step 1-3 represent calls to the prover agent: 
+   is like this, where step 1-3 represent calls to the prover broker: 
 
    1. Owner/user1 generates private public key pairs for signing requests
    2. Owner/user1 generates a signature using requests sent to provider1
