@@ -8,11 +8,11 @@
 import { BigNumberish } from "ethers";
 
 export const privateKey: [BigNumberish, BigNumberish] = [
-    BigInt(`0x951afaf3778aa240a5ededf2abbb46c7`),
-    BigInt(`0x26bea0ef426f14ebb4a0f2cbf2ba5163`),
+    BigInt(`0x4a074caa9fa911971072d45927982ea5`),
+    BigInt(`0x21c4249de5b8ca90937238ab94edeed0`),
 ];
 
 export const publicKey: [BigNumberish, BigNumberish] = [
-    BigInt(`0x7aff2506d9ba2df8f48f552feed68468`),
-    BigInt(`0x8107aede44025ea329e2b70f01692018`),
+    BigInt(`0x76e4a83afb408936b7bc2230a9c7168e`),
+    BigInt(`0x8ecf4c77bd69c11750b3c121fd24818e`),
 ];
