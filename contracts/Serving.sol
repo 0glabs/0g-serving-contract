@@ -41,7 +41,8 @@ contract Serving is Ownable, Initializable {
         string url,
         uint inputPrice,
         uint outputPrice,
-        uint updatedAt
+        uint updatedAt,
+        string model
     );
     event ServiceRemoved(address indexed service, string indexed name);
 
@@ -110,11 +111,12 @@ contract Serving is Ownable, Initializable {
         string memory name,
         string memory serviceType,
         string calldata url,
+        string calldata model,
         uint inputPrice,
         uint outputPrice
     ) external {
-        serviceMap.addOrUpdateService(msg.sender, name, serviceType, url, inputPrice, outputPrice);
-        emit ServiceUpdated(msg.sender, name, serviceType, url, inputPrice, outputPrice, block.timestamp);
+        serviceMap.addOrUpdateService(msg.sender, name, serviceType, url, model, inputPrice, outputPrice);
+        emit ServiceUpdated(msg.sender, name, serviceType, url, inputPrice, outputPrice, block.timestamp, model);
     }
 
     function removeService(string memory name) external {
