@@ -1,28 +1,44 @@
 # 0G Serving Contract
 
-## Compile
+## Prerequisites
+
+- Node.js: 20.16.0
+- Yarn: 1.22.22
+
+## Compilation
 
 ```shell
 yarn
 yarn compile
 ```
 
-## Deploy
+## Deployment
 
 ```shell
 yarn deploy zg
 ```
 
-## Upgrade
+After deployment, make sure to update the following files with the appropriate addresses:
+
+- In `upgrade_serving.ts`, update the `beaconDeploymentAddress`.
+- In `upgrade_verifier.ts`, update the `servingAddress`.
+
+## Upgrading Contracts
+
+### General Contract Upgrade
 
 ```shell
 yarn upgradeContract zg
 ```
 
-## Test
+### Upgrade BatchVerifier.sol
 
-1. Unit Test
+```shell
+yarn upgradeVerifier zg
+```
 
-    ```shell
-    yarn test
-    ```
+## Testing
+
+```shell
+yarn test
+```
