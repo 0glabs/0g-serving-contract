@@ -7,7 +7,7 @@ while true; do
     if [ "$sh_count" -gt 1 ]; then
         if [ ! -f "/usr/src/app/deployed.txt" ]; then
             cd /usr/src/app || exit
-            npx hardhat deploy --tags Serving --network hardhat
+            npx hardhat deploy --tags Serving --network localhost
             if [ $? -eq 0 ]; then
                 touch "deployed.txt"
                 echo "Contracts deployed"
