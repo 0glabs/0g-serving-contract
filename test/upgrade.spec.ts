@@ -27,6 +27,7 @@ describe("Upgrade Serving", () => {
     const provider1OutputPrice = 100;
     const provider1Url = "https://example-1.com";
     const provider1Model = "llama-8b";
+    const provider1Verifiability = "SPML";
 
     const provider2Name = "test-provider-2";
     const provider2Type = "HTTP";
@@ -34,6 +35,7 @@ describe("Upgrade Serving", () => {
     const provider2OutputPrice = 100;
     const provider2Url = "https://example-2.com";
     const provider2Model = "phi-3-mini-4k-instruct";
+    const provider2Verifiability = "TeeML";
 
     beforeEach(async () => {
         await deployments.fixture(["Serving"]);
@@ -63,6 +65,7 @@ describe("Upgrade Serving", () => {
                     provider1Type,
                     provider1Url,
                     provider1Model,
+                    provider1Verifiability,
                     provider1InputPrice,
                     provider1OutputPrice
                 ),
@@ -73,6 +76,7 @@ describe("Upgrade Serving", () => {
                     provider2Type,
                     provider2Url,
                     provider2Model,
+                    provider2Verifiability,
                     provider2InputPrice,
                     provider2OutputPrice
                 ),
@@ -98,6 +102,7 @@ describe("Upgrade Serving", () => {
         const serviceTypes = (services as ServiceStructOutput[]).map((s) => s.serviceType);
         const serviceUrls = (services as ServiceStructOutput[]).map((s) => s.url);
         const serviceModels = (services as ServiceStructOutput[]).map((s) => s.model);
+        const serviceVerifiability = (services as ServiceStructOutput[]).map((s) => s.verifiability);
         const serviceInputPrices = (services as ServiceStructOutput[]).map((s) => s.inputPrice);
         const serviceOutputPrices = (services as ServiceStructOutput[]).map((s) => s.outputPrice);
         const serviceUpdatedAts = (services as ServiceStructOutput[]).map((s) => s.updatedAt);
@@ -110,6 +115,7 @@ describe("Upgrade Serving", () => {
         expect(serviceTypes).to.have.members([provider1Type, provider2Type]);
         expect(serviceUrls).to.have.members([provider1Url, provider2Url]);
         expect(serviceModels).to.have.members([provider1Model, provider2Model]);
+        expect(serviceVerifiability).to.have.members([provider1Verifiability, provider2Verifiability]);
         expect(serviceInputPrices).to.have.members([BigInt(provider1InputPrice), BigInt(provider2InputPrice)]);
         expect(serviceOutputPrices).to.have.members([BigInt(provider1OutputPrice), BigInt(provider2OutputPrice)]);
         expect(serviceUpdatedAts[0]).to.not.equal(0);

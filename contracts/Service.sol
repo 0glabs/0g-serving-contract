@@ -12,6 +12,7 @@ struct Service {
     uint outputPrice;
     uint updatedAt;
     string model;
+    string verifiability;
 }
 
 library ServiceLibrary {
@@ -47,12 +48,27 @@ library ServiceLibrary {
         string memory serviceType,
         string memory url,
         string memory model,
+        string memory verifiability,
         uint inputPrice,
         uint outputPrice
     ) internal {
         bytes32 key = _key(provider, name);
         if (!_contains(map, key)) {
-            _set(map, key, Service(provider, name, serviceType, url, inputPrice, outputPrice, block.timestamp, model));
+            _set(
+                map,
+                key,
+                Service(
+                    provider,
+                    name,
+                    serviceType,
+                    url,
+                    inputPrice,
+                    outputPrice,
+                    block.timestamp,
+                    model,
+                    verifiability
+                )
+            );
             return;
         }
         Service storage value = _get(map, provider, name);
@@ -63,6 +79,7 @@ library ServiceLibrary {
         value.url = url;
         value.updatedAt = block.timestamp;
         value.model = model;
+        value.verifiability = verifiability;
     }
 
     function removeService(ServiceMap storage map, address provider, string memory name) internal {

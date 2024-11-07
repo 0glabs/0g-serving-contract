@@ -41,6 +41,7 @@ describe("Serving", () => {
     const provider1OutputPrice = 100;
     const provider1Url = "https://example-1.com";
     const provider1Model = "llama-8b";
+    const provider1Verifiability = "SPML";
 
     const provider2ServiceName = "test-provider-2";
     const provider2ServiceType = "HTTP";
@@ -48,6 +49,7 @@ describe("Serving", () => {
     const provider2OutputPrice = 100;
     const provider2Url = "https://example-2.com";
     const provider2Model = "phi-3-mini-4k-instruct";
+    const provider2Verifiability = "TeeML";
 
     beforeEach(async () => {
         await deployments.fixture(["Serving"]);
@@ -74,6 +76,7 @@ describe("Serving", () => {
                     provider1ServiceType,
                     provider1Url,
                     provider1Model,
+                    provider1Verifiability,
                     provider1InputPrice,
                     provider1OutputPrice
                 ),
@@ -84,6 +87,7 @@ describe("Serving", () => {
                     provider2ServiceType,
                     provider2Url,
                     provider2Model,
+                    provider2Verifiability,
                     provider2InputPrice,
                     provider2OutputPrice
                 ),
@@ -167,6 +171,7 @@ describe("Serving", () => {
             expect(service.serviceType).to.equal(provider1ServiceType);
             expect(service.url).to.equal(provider1Url);
             expect(service.model).to.equal(provider1Model);
+            expect(service.verifiability).to.equal(provider1Verifiability);
             expect(service.inputPrice).to.equal(provider1InputPrice);
             expect(service.outputPrice).to.equal(provider1OutputPrice);
             expect(service.updatedAt).to.not.equal(0);
@@ -179,6 +184,7 @@ describe("Serving", () => {
             const serviceTypes = (services as ServiceStructOutput[]).map((s) => s.serviceType);
             const urls = (services as ServiceStructOutput[]).map((s) => s.url);
             const models = (services as ServiceStructOutput[]).map((s) => s.model);
+            const allVerifiability = (services as ServiceStructOutput[]).map((s) => s.verifiability);
             const inputPrices = (services as ServiceStructOutput[]).map((s) => s.inputPrice);
             const outputPrices = (services as ServiceStructOutput[]).map((s) => s.outputPrice);
             const updatedAts = (services as ServiceStructOutput[]).map((s) => s.updatedAt);
@@ -188,6 +194,7 @@ describe("Serving", () => {
             expect(serviceTypes).to.have.members([provider1ServiceType, provider2ServiceType]);
             expect(urls).to.have.members([provider1Url, provider2Url]);
             expect(models).to.have.members([provider1Model, provider2Model]);
+            expect(allVerifiability).to.have.members([provider1Verifiability, provider2Verifiability]);
             expect(inputPrices).to.have.members([BigInt(provider1InputPrice), BigInt(provider2InputPrice)]);
             expect(outputPrices).to.have.members([BigInt(provider1OutputPrice), BigInt(provider2OutputPrice)]);
             expect(updatedAts[0]).to.not.equal(0);
@@ -198,6 +205,7 @@ describe("Serving", () => {
             const modifiedServiceType = "RPC";
             const modifiedPriceUrl = "https://example-modified.com";
             const modifiedModel = "llama-13b";
+            const modifiedVerifiability = "TeeML";
             const modifiedInputPrice = 200;
             const modifiedOutputPrice = 300;
 
@@ -209,6 +217,7 @@ describe("Serving", () => {
                         modifiedServiceType,
                         modifiedPriceUrl,
                         modifiedModel,
+                        modifiedVerifiability,
                         modifiedInputPrice,
                         modifiedOutputPrice
                     )
@@ -222,7 +231,8 @@ describe("Serving", () => {
                     modifiedInputPrice,
                     modifiedOutputPrice,
                     anyValue,
-                    modifiedModel
+                    modifiedModel,
+                    modifiedVerifiability
                 );
 
             const service = await serving.getService(provider1Address, provider1ServiceName);
@@ -230,6 +240,7 @@ describe("Serving", () => {
             expect(service.serviceType).to.equal(modifiedServiceType);
             expect(service.url).to.equal(modifiedPriceUrl);
             expect(service.model).to.equal(modifiedModel);
+            expect(service.verifiability).to.equal(modifiedVerifiability);
             expect(service.inputPrice).to.equal(modifiedInputPrice);
             expect(service.outputPrice).to.equal(modifiedOutputPrice);
             expect(service.updatedAt).to.not.equal(0);
