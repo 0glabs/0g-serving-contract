@@ -37,6 +37,8 @@ describe("Upgrade Serving", () => {
     const provider2Model = "phi-3-mini-4k-instruct";
     const provider2Verifiability = "TeeML";
 
+    const additionalData = "U2FsdGVkX18cuPVgRkw/sHPq2YzJE5MyczGO0vOTQBBiS9A4Pka5woWK82fZr0Xjh8mDhjlW9ARsX6e6sKDChg==";
+
     beforeEach(async () => {
         await deployments.fixture(["Serving"]);
 
@@ -53,8 +55,8 @@ describe("Upgrade Serving", () => {
         serving = await ethers.getContractAt("Serving", servingDeployment.address);
 
         await Promise.all([
-            serving.addAccount(provider1Address, publicKey, { value: ownerInitialBalance }),
-            serving.connect(user1).addAccount(provider1Address, publicKey, {
+            serving.addAccount(provider1Address, publicKey, additionalData, { value: ownerInitialBalance }),
+            serving.connect(user1).addAccount(provider1Address, publicKey, additionalData, {
                 value: user1InitialBalance,
                 from: await user1.getAddress(),
             }),

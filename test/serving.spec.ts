@@ -51,6 +51,8 @@ describe("Serving", () => {
     const provider2Model = "phi-3-mini-4k-instruct";
     const provider2Verifiability = "TeeML";
 
+    const additionalData = "U2FsdGVkX18cuPVgRkw/sHPq2YzJE5MyczGO0vOTQBBiS9A4Pka5woWK82fZr0Xjh8mDhjlW9ARsX6e6sKDChg==";
+
     beforeEach(async () => {
         await deployments.fixture(["Serving"]);
         servingDeployment = await deployments.get("Serving");
@@ -67,8 +69,10 @@ describe("Serving", () => {
 
     beforeEach(async () => {
         const initializations: ContractTransactionResponse[] = await Promise.all([
-            serving.addAccount(provider1Address, publicKey, { value: ownerInitialBalance }),
-            serving.connect(user1).addAccount(provider1Address, publicKey, { value: user1InitialBalance }),
+            serving.addAccount(provider1Address, publicKey, additionalData, { value: ownerInitialBalance }),
+            serving
+                .connect(user1)
+                .addAccount(provider1Address, publicKey, additionalData, { value: user1InitialBalance }),
             serving
                 .connect(provider1)
                 .addOrUpdateService(

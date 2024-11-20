@@ -11,6 +11,7 @@ struct Account {
     uint pendingRefund;
     uint[2] signer;
     Refund[] refunds;
+    string additionalInfo;
 }
 
 struct Refund {
@@ -57,13 +58,14 @@ library AccountLibrary {
         address user,
         address provider,
         uint[2] calldata signer,
-        uint amount
+        uint amount,
+        string memory additionalInfo
     ) internal returns (uint, uint) {
         bytes32 key = _key(user, provider);
         if (_contains(map, key)) {
             revert AccountExists(user, provider);
         }
-        _set(map, key, user, provider, signer, amount);
+        _set(map, key, user, provider, signer, amount, additionalInfo);
         return (amount, 0);
     }
 
@@ -157,13 +159,15 @@ library AccountLibrary {
         address user,
         address provider,
         uint[2] calldata signer,
-        uint balance
+        uint balance,
+        string memory additionalInfo
     ) internal {
         Account storage account = map._values[key];
         account.balance = balance;
         account.user = user;
         account.provider = provider;
         account.signer = signer;
+        account.additionalInfo = additionalInfo;
         map._keys.add(key);
     }
 
