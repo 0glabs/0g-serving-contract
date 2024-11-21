@@ -73,9 +73,19 @@ contract Serving is Ownable, Initializable {
         return accountMap.getAllAccounts();
     }
 
-    function addAccount(address provider, uint[2] calldata signer, string memory additionalInfo ) external payable {
-        (uint balance, uint pendingRefund) = accountMap.addAccount(msg.sender, provider, signer, msg.value, additionalInfo);
+    function addAccount(address provider, uint[2] calldata signer, string memory additionalInfo) external payable {
+        (uint balance, uint pendingRefund) = accountMap.addAccount(
+            msg.sender,
+            provider,
+            signer,
+            msg.value,
+            additionalInfo
+        );
         emit BalanceUpdated(msg.sender, provider, balance, pendingRefund);
+    }
+
+    function deleteAccount(address provider) external {
+        accountMap.deleteAccount(msg.sender, provider);
     }
 
     function depositFund(address provider) external payable {

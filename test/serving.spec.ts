@@ -298,4 +298,12 @@ describe("Serving", () => {
             await expect(serving.connect(provider1).settleFees(verifierInput)).to.be.reverted;
         });
     });
+
+    describe("deleteAccount", () => {
+        it("should delete account", async () => {
+            await expect(serving.deleteAccount(provider1Address)).not.to.be.reverted;
+            const accounts = await serving.getAllAccounts();
+            expect(accounts.length).to.equal(1);
+        });
+    });
 });

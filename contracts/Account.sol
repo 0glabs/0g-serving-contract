@@ -69,6 +69,15 @@ library AccountLibrary {
         return (amount, 0);
     }
 
+    function deleteAccount(AccountMap storage map, address user, address provider) internal {
+        bytes32 key = _key(user, provider);
+        if (!_contains(map, key)) {
+            revert AccountNotexists(user, provider);
+        }
+        map._keys.remove(key);
+        delete map._values[key];
+    }
+
     function depositFund(
         AccountMap storage map,
         address user,
