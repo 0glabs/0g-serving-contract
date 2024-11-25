@@ -17,6 +17,7 @@ while true; do
             fi
         else
             echo "deployed.txt already exists"
+            exit 0
         fi
     else
         echo "sh process count is not greater than 1"
