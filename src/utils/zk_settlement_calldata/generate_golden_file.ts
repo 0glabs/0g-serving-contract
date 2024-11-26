@@ -37,7 +37,7 @@ const host = "http://localhost:3000";
 const requestLength = 40;
 
 interface Request {
-    nonce: number;
+    nonce: string;
     fee: string;
     userAddress: string;
     providerAddress: string;
@@ -98,13 +98,13 @@ const generateCalldata = async (
 const generateSucceed = async (privkey: string[], pubkey: string[]): Promise<string> => {
     const ownerRequests: Request[] = [
         {
-            nonce: 1,
+            nonce: "17326143486140001",
             fee: "10",
             userAddress: "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
             providerAddress: "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC",
         },
         {
-            nonce: 2,
+            nonce: "17326143486140002",
             fee: "10",
             userAddress: "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
             providerAddress: "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC",
@@ -112,13 +112,13 @@ const generateSucceed = async (privkey: string[], pubkey: string[]): Promise<str
     ];
     const user1Requests: Request[] = [
         {
-            nonce: 1,
+            nonce: "17326143486140001",
             fee: "10",
             userAddress: "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
             providerAddress: "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC",
         },
         {
-            nonce: 2,
+            nonce: "17326143486140002",
             fee: "10",
             userAddress: "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
             providerAddress: "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC",
@@ -170,13 +170,13 @@ export const succeedFee = 20;
 const generateDoubleSpending = async (privkey: string[], pubkey: string[]): Promise<string> => {
     const initRequests: Request[] = [
         {
-            nonce: 1,
+            nonce: "17326143486140001",
             fee: "10",
             userAddress: "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
             providerAddress: "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC",
         },
         {
-            nonce: 2,
+            nonce: "17326143486140002",
             fee: "10",
             userAddress: "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
             providerAddress: "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC",
@@ -184,13 +184,13 @@ const generateDoubleSpending = async (privkey: string[], pubkey: string[]): Prom
     ];
     const overlappedRequests: Request[] = [
         {
-            nonce: 39,
+            nonce: "17326143486140039",
             fee: "10",
             userAddress: "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
             providerAddress: "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC",
         },
         {
-            nonce: 40,
+            nonce: "17326143486140040",
             fee: "10",
             userAddress: "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
             providerAddress: "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC",
@@ -238,13 +238,13 @@ ${proofInputs}
 const generateInsufficientBalance = async (privkey: string[], pubkey: string[]): Promise<string> => {
     const requests: Request[] = [
         {
-            nonce: 1,
+            nonce: "17326143486140001",
             fee: "600",
             userAddress: "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
             providerAddress: "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC",
         },
         {
-            nonce: 2,
+            nonce: "17326143486140002",
             fee: "600",
             userAddress: "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
             providerAddress: "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC",
