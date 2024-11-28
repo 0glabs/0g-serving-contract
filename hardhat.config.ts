@@ -7,7 +7,9 @@ import "hardhat-gas-reporter";
 import { HardhatUserConfig } from "hardhat/config";
 dotenv.config();
 
-const ZG_PRIVATE_KEY = process.env.PRIVATE_KEY || "";
+const ZG_TESTNET_PRIVATE_KEY = process.env.PRIVATE_KEY || "";
+
+import "./src/tasks/upgrade";
 
 /** @type import('hardhat/config').HardhatUserConfig */
 const config: HardhatUserConfig = {
@@ -71,9 +73,9 @@ const config: HardhatUserConfig = {
                 },
             ],
         },
-        zg: {
+        zgTestnet: {
             url: "https://evmrpc-testnet.0g.ai",
-            accounts: [ZG_PRIVATE_KEY],
+            accounts: [ZG_TESTNET_PRIVATE_KEY],
             chainId: 16600,
         },
     },

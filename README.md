@@ -14,24 +14,13 @@ yarn compile
 
 ## Deployment
 
-```shell
-yarn deploy zg
-```
+Follow [Standard Operating Procedure for Contract Deployment/Upgrade](https://github.com/0glabs/0g-storage-contracts?tab=readme-ov-file#standard-operating-procedure-for-contract-deploymentupgrade)
 
 After deployment, make sure to update the following files with the appropriate addresses:
 
-- In `upgrade_serving.ts`, update the `beaconDeploymentAddress`.
 - In `upgrade_verifier.ts`, update the `servingAddress`.
 
-## Upgrading Contracts
-
-### General Contract Upgrade
-
-```shell
-yarn upgradeContract zg
-```
-
-### Upgrade BatchVerifier.sol
+## Upgrade BatchVerifier.sol
 
 ```shell
 yarn upgradeVerifier zg

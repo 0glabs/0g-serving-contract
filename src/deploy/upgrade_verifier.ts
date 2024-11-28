@@ -3,7 +3,7 @@ import { DeployFunction } from "hardhat-deploy/types";
 import { HardhatRuntimeEnvironment } from "hardhat/types";
 import { CONTRACTS, deployDirectly, getTypedContract } from "../utils/utils";
 
-const servingAddress = "0x9Ae9b2C822beFF4B4466075006bc6b5ac35E779F";
+const servingAddress = "0xE7F0998C83a81f04871BEdfD89aB5f2DAcDBf435";
 
 const upgradeVerifier: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
     await deployDirectly(hre, CONTRACTS.Verifier);

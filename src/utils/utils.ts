@@ -7,7 +7,7 @@ import { HardhatRuntimeEnvironment } from "hardhat/types";
 //
 // 1. We import the types at compile time to ensure type safety. Hardhat does not report an error even
 // if these files are not yet generated, as long as the "--typecheck" command-line argument is not used.
-import { ContractFactory, ContractRunner, Signer } from "ethers";
+import { BaseContract, ContractFactory, ContractRunner, ethers, Signer } from "ethers";
 import * as TypechainTypes from "../../typechain-types";
 // 2. We import the values at runtime and silently ignore any exceptions.
 export let Factories = {} as typeof TypechainTypes;
@@ -40,10 +40,19 @@ class ContractMeta<T> {
     }
 }
 
+export const DEFAULT_ADMIN_ROLE = "0x0000000000000000000000000000000000000000000000000000000000000000";
+export const PAUSER_ROLE = ethers.id("PAUSER_ROLE");
+
 export const CONTRACTS = {
     Serving: new ContractMeta(Factories.Serving__factory),
     Verifier: new ContractMeta(Factories.Wrapper__factory),
 } as const;
+
+type GetContractTypeFromContractMeta<F> = F extends ContractMeta<infer C> ? C : never;
+
+type AnyContractType = GetContractTypeFromContractMeta<(typeof CONTRACTS)[keyof typeof CONTRACTS]>;
+
+export type AnyContractMeta = ContractMeta<AnyContractType>;
 
 const UPGRADEABLE_BEACON = "UpgradeableBeacon";
 const BEACON_PROXY = "BeaconProxy";
@@ -80,7 +89,7 @@ export async function deployInBeaconProxy(
     });
     const implementation = await hre.ethers.getContract(`${contract.name}Impl`);
     // deploy beacon
-    const upgradeableBeacon = await deployments.deploy(`${contract.name}Beacon`, {
+    await deployments.deploy(`${contract.name}Beacon`, {
         from: deployer,
         contract: UPGRADEABLE_BEACON,
         args: [await implementation.getAddress()],
@@ -88,45 +97,12 @@ export async function deployInBeaconProxy(
     });
     const beacon = await hre.ethers.getContract(`${contract.name}Beacon`);
     // deploy proxy
-    const proxy = await deployments.deploy(contract.name, {
+    await deployments.deploy(contract.name, {
         from: deployer,
         contract: BEACON_PROXY,
         args: [await beacon.getAddress(), []],
         log: true,
     });
-
-    const beaconArtifact = await deployments.getArtifact("UpgradeableBeacon");
-    const proxyArtifact = await deployments.getArtifact(contract.name);
-
-    await deployments.save("UpgradeableBeacon", { ...beaconArtifact, address: upgradeableBeacon.address });
-    await deployments.save(contract.name, { ...proxyArtifact, address: proxy.address });
-}
-
-export async function upgradeImplementation(
-    hre: HardhatRuntimeEnvironment,
-    newContractName: string,
-    beaconAddress: string
-) {
-    const { deployments, getNamedAccounts } = hre;
-    const { deployer } = await getNamedAccounts();
-
-    // new implantation
-    await deployments.deploy(`${newContractName}Impl`, {
-        from: deployer,
-        contract: newContractName,
-        args: [],
-        log: true,
-    });
-
-    const newImplementation = await hre.ethers.getContract(`${newContractName}Impl`);
-    const beacon = await hre.ethers.getContractAt("UpgradeableBeacon", beaconAddress);
-
-    // update beacon address
-    await (await beacon.upgradeTo(await newImplementation.getAddress())).wait();
-
-    console.log(
-        `Beacon contract at ${beaconAddress} is now pointing to new implementation at ${await newImplementation.getAddress()}`
-    );
 }
 
 export async function getTypedContract<T>(
@@ -142,4 +118,26 @@ export async function getTypedContract<T>(
         signer = await hre.ethers.getSigner(signer);
     }
     return contract.factory.connect(address, signer);
+}
+
+export async function transact(contract: BaseContract, methodName: string, params: unknown[], execute: boolean) {
+    if (execute) {
+        await (await contract.getFunction(methodName).send(...params)).wait();
+    } else {
+        console.log(`to: ${await contract.getAddress()}`);
+        console.log(`func: ${contract.interface.getFunction(methodName)?.format()}`);
+
+        console.log(`params: ${JSON.stringify(params, (_, v) => (typeof v === "bigint" ? v.toString() : v))}`);
+        console.log(`data: ${contract.interface.encodeFunctionData(methodName, params)}`);
+    }
+}
+
+export function validateError(e: unknown, msg: string) {
+    if (e instanceof Error) {
+        if (!e.toString().includes(msg)) {
+            throw Error(`unexpected error: ${String(e)}`);
+        }
+    } else {
+        throw Error(`unexpected error: ${String(e)}`);
+    }
 }

@@ -12,6 +12,7 @@
         "./test",
         "./typechain-types",
         "src/deploy",
+        "src/tasks",
         "deploy/deploy.ts",
         "src/utils/zk_settlement_calldata",
         "src/utils/upgrade_serving.ts",
