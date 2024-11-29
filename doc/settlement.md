@@ -1,4 +1,4 @@
-# Settle Code Logic
+# Settlement
 
 The settle function can be divided into two main logical parts:
 
