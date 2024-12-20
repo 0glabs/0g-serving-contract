@@ -9,9 +9,11 @@ struct Account {
     uint nonce;
     uint balance;
     uint pendingRefund;
-    uint[2] signer;
+    uint[2] userSigner;
     Refund[] refunds;
     string additionalInfo;
+    address providerSigningAddress;
+    Deliverable[] deliverables;
 }
 
 struct Refund {
@@ -21,10 +23,15 @@ struct Refund {
     bool processed;
 }
 
+struct Deliverable {
+    bytes16 jobID;
+    uint modelRootHash;
+}
+
 library AccountLibrary {
     using EnumerableSet for EnumerableSet.Bytes32Set;
 
-    error AccountNotexists(address user, address provider);
+    error AccountNotExists(address user, address provider);
     error AccountExists(address user, address provider);
     error InsufficientBalance(address user, address provider);
     error RefundInvalid(address user, address provider, uint index);
@@ -72,7 +79,7 @@ library AccountLibrary {
     function deleteAccount(AccountMap storage map, address user, address provider) internal {
         bytes32 key = _key(user, provider);
         if (!_contains(map, key)) {
-            revert AccountNotexists(user, provider);
+            revert AccountNotExists(user, provider);
         }
         map._keys.remove(key);
         delete map._values[key];
@@ -86,7 +93,7 @@ library AccountLibrary {
     ) internal returns (uint, uint) {
         bytes32 key = _key(user, provider);
         if (!_contains(map, key)) {
-            revert AccountNotexists(user, provider);
+            revert AccountNotExists(user, provider);
         }
         Account storage account = _get(map, user, provider);
         account.balance += amount;
@@ -140,6 +147,37 @@ library AccountLibrary {
         pendingRefund = account.pendingRefund;
     }
 
+    function updateProviderSigningAddress(
+        AccountMap storage map,
+        address user,
+        address provider,
+        address providerSigningAddress
+    ) internal {
+        if (!_contains(map, _key(user, provider))) {
+            revert AccountNotExists(user, provider);
+        }
+        Account storage account = _get(map, user, provider);
+        account.providerSigningAddress = providerSigningAddress;
+    }
+
+    function updateDeliverables(
+        AccountMap storage map,
+        address user,
+        address provider,
+        Deliverable memory deliverable
+    ) internal {
+        if (!_contains(map, _key(user, provider))) {
+            revert AccountNotExists(user, provider);
+        }
+        Account storage account = _get(map, user, provider);
+        for (uint i = 0; i < account.deliverables.length; i++) {
+            if (account.deliverables[i].jobID == deliverable.jobID) {
+                revert("deliverable already exists.");
+            }
+        }
+        account.deliverables.push(deliverable);
+    }
+
     function _at(AccountMap storage map, uint index) internal view returns (Account storage) {
         bytes32 key = map._keys.at(index);
         return map._values[key];
@@ -157,7 +195,7 @@ library AccountLibrary {
         bytes32 key = _key(user, provider);
         Account storage value = map._values[key];
         if (!_contains(map, key)) {
-            revert AccountNotexists(user, provider);
+            revert AccountNotExists(user, provider);
         }
         return value;
     }
@@ -175,7 +213,7 @@ library AccountLibrary {
         account.balance = balance;
         account.user = user;
         account.provider = provider;
-        account.signer = signer;
+        account.userSigner = signer;
         account.additionalInfo = additionalInfo;
         map._keys.add(key);
     }

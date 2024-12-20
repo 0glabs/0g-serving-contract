@@ -3,7 +3,7 @@ pragma solidity >=0.8.0 <0.9.0;
 
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/utils/structs/EnumerableMap.sol";
-import "./utils/Initializable.sol";
+import "../utils/Initializable.sol";
 import "./Account.sol";
 import "./Service.sol";
 
