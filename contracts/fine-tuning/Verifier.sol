@@ -1,15 +1,16 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.0;
+pragma solidity >=0.8.0 <0.9.0;
 
 struct VerifierInput {
     bytes signature;
+    bytes16 jobID;
     bytes modelRootHash;
     uint taskFee;
     uint nonce;
     address user;
 }
 
-contract VerifierLib {
+library VerifierLibrary {
     function verifySignature(VerifierInput memory input, address expectedAddress) internal pure returns (bool) {
         bytes32 messageHash = getMessageHash(input);
         bytes32 ethSignedMessageHash = getEthSignedMessageHash(messageHash);
@@ -18,7 +19,7 @@ contract VerifierLib {
     }
 
     function getMessageHash(VerifierInput memory input) internal pure returns (bytes32) {
-        return keccak256(abi.encodePacked(input.modelRootHash, input.taskFee, input.nonce, input.user));
+        return keccak256(abi.encodePacked(input.jobID, input.modelRootHash, input.taskFee, input.nonce, input.user));
     }
 
     function getEthSignedMessageHash(bytes32 messageHash) internal pure returns (bytes32) {

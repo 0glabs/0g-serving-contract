@@ -6,10 +6,9 @@ import "@openzeppelin/contracts/utils/structs/EnumerableMap.sol";
 import "../utils/Initializable.sol";
 import "./Account.sol";
 import "./Service.sol";
+import "./Verifier.sol";
 
-
-
-interface ISignatureVerifier {
+interface IVerifier {
     function verifySignature(
         string memory message,
         bytes memory signature,
@@ -20,6 +19,7 @@ interface ISignatureVerifier {
 contract Serving is Ownable, Initializable {
     using AccountLibrary for AccountLibrary.AccountMap;
     using ServiceLibrary for ServiceLibrary.ServiceMap;
+    using VerifierLibrary for VerifierInput;
 
     uint public lockTime;
     AccountLibrary.AccountMap private accountMap;
@@ -87,11 +87,7 @@ contract Serving is Ownable, Initializable {
     }
 
     function updateProviderSigningAddress(address provider, address providerSigningAddress) external payable {
-        (uint balance, uint pendingRefund) = accountMap.updateProviderSigningAddress(
-            msg.sender,
-            provider,
-            providerSigningAddress
-        );
+        accountMap.updateProviderSigningAddress(msg.sender, provider, providerSigningAddress);
     }
 
     function getService(address provider, string memory name) public view returns (Service memory service) {
@@ -113,74 +109,26 @@ contract Serving is Ownable, Initializable {
     }
 
     function settleFees(VerifierInput calldata verifierInput) external {
-        bool teePassed = verifySignature.verifierVerify(
-            verifierInput.inProof,
-            verifierInput.proofInputs,
-            verifierInput.numChunks
-        );
-        // bool zkPassed = batchVerifier.verifyBatch(
-        //     verifierInput.inProof,
-        //     verifierInput.proofInputs,
-        //     verifierInput.numChunks
-        // );
-        if (!zkPassed) {
+        Account storage account = accountMap.getAccount(verifierInput.user, msg.sender);
+
+        if (account.providerSigningAddress == address(0)) {
+            revert InvalidProofInputs("providerSigningAddress not set");
+        }
+
+        bool teePassed = verifierInput.verifySignature(account.providerSigningAddress);
+        if (!teePassed) {
             revert InvalidProofInputs("TEE settlement validation failed");
         }
 
-        uint[] memory inputs = verifierInput.proofInputs;
-        uint start = 0;
-        uint expectedProviderAddress = uint(uint160(msg.sender));
+        Deliverable memory deliverable = Deliverable({
+            jobID: verifierInput.jobID,
+            modelRootHash: verifierInput.modelRootHash
+        });
 
-        for (uint segmentIdx = 0; segmentIdx < verifierInput.segmentSize.length; segmentIdx++) {
-            uint segmentSize = verifierInput.segmentSize[segmentIdx];
-            uint end = start + segmentSize;
+        accountMap.updateDeliverables(verifierInput.user, msg.sender, deliverable);
 
-            uint totalCosts = 0;
-            uint expectedUserAddress = inputs[start];
-            uint firstRequestNonce = inputs[start + 2];
-            uint lastRequestNonce = inputs[start + 3];
-            Account storage account = accountMap.getAccount(address(uint160(expectedUserAddress)), msg.sender);
-            if (account.signer[0] != inputs[start + 5] || account.signer[1] != inputs[start + 6]) {
-                revert InvalidProofInputs("signer key is incorrect");
-            }
-            if (account.nonce > firstRequestNonce) {
-                revert InvalidProofInputs("initial nonce is incorrect");
-            }
-            for (uint chunkIdx = start; chunkIdx < end; chunkIdx += 7) {
-                uint userAddress = inputs[chunkIdx];
-                uint providerAddress = inputs[chunkIdx + 1];
-                lastRequestNonce = inputs[chunkIdx + 3];
-                uint cost = inputs[chunkIdx + 4];
-                uint nextChunkFirstRequestNonce = chunkIdx + 9 < end ? inputs[chunkIdx + 9] : 0;
-
-                if (nextChunkFirstRequestNonce != 0 && lastRequestNonce >= nextChunkFirstRequestNonce) {
-                    revert InvalidProofInputs("nonce overlapped");
-                }
-
-                if (userAddress != expectedUserAddress || providerAddress != expectedProviderAddress) {
-                    revert InvalidProofInputs(
-                        userAddress != expectedUserAddress
-                            ? "user address is incorrect"
-                            : "provider address is incorrect"
-                    );
-                }
-
-                totalCosts += cost;
-            }
-            if (account.balance < totalCosts) {
-                revert InvalidProofInputs("insufficient balance");
-            }
-            _settleFees(account, totalCosts);
-            start = end;
-            account.nonce = lastRequestNonce;
-        }
-        if (start != inputs.length) {
-            revert InvalidProofInputs("array segmentSize sum mismatches public input length");
-        }
-    }
-
-    function _updateDeliverables(address user, Deliverable memory deliverables) private {
-        (uint balance, uint pendingRefund) = accountMap.updateDeliverables(user, msg.sender, deliverables);
+        _settleFees(account, verifierInput.taskFee);
+        account.nonce = verifierInput.nonce;
     }
 
     function _settleFees(Account storage account, uint amount) private {

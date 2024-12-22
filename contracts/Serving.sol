@@ -3,8 +3,10 @@ pragma solidity >=0.8.0 <0.9.0;
 
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/utils/structs/EnumerableMap.sol";
-import "../utils/Initializable.sol";
-import "./Account.sol";
+import "./utils/Initializable.sol";
+import "./BaseLedger.sol";
+import "./FineTuningLedger.sol";
+import "./InferenceLedger.sol";
 import "./Service.sol";
 
 struct VerifierInput {
@@ -23,17 +25,27 @@ interface IBatchVerifier {
 }
 
 contract Serving is Ownable, Initializable {
-    using AccountLibrary for AccountLibrary.AccountMap;
+    using BaseLedgerLibrary for BaseLedgerMap;
+    using InferenceLedgerLibrary for InferenceLedgerMap;
+    using FineTuningLedgerLibrary for FineTuningLedgerMap;
     using ServiceLibrary for ServiceLibrary.ServiceMap;
 
     uint public lockTime;
     address public batchVerifierAddress;
     IBatchVerifier private batchVerifier;
-    AccountLibrary.AccountMap private accountMap;
+    BaseLedgerMap private baseLedgerMap;
+    InferenceLedgerMap private inferenceLedgerMap;
+    FineTuningLedgerMap private fineTuningLedgerMap;
     ServiceLibrary.ServiceMap private serviceMap;
 
-    event BalanceUpdated(address indexed user, address indexed provider, uint amount, uint pendingRefund);
-    event RefundRequested(address indexed user, address indexed provider, uint indexed index, uint timestamp);
+    event BalanceUpdated(
+        string serviceType,
+        address indexed customer,
+        address indexed provider,
+        uint amount,
+        uint pendingRefund
+    );
+    event RefundRequested(address indexed customer, address indexed provider, uint indexed index, uint timestamp);
     event ServiceUpdated(
         address indexed service,
         string indexed name,
@@ -65,41 +77,63 @@ contract Serving is Ownable, Initializable {
         batchVerifier = IBatchVerifier(batchVerifierAddress);
     }
 
-    function getAccount(address user, address provider) public view returns (Account memory) {
-        return accountMap.getAccount(user, provider);
+    function getInferenceLedger(address customer, address provider) public view returns (InferenceLedger memory) {
+        return inferenceLedgerMap.getLedger(customer, provider);
     }
 
-    function getAllAccounts() public view returns (Account[] memory) {
-        return accountMap.getAllAccounts();
+    function getFineTuningLedger(address customer, address provider) public view returns (FineTuningLedger memory) {
+        return fineTuningLedgerMap.getLedger(customer, provider);
     }
 
-    function addAccount(address provider, uint[2] calldata signer, string memory additionalInfo) external payable {
-        (uint balance, uint pendingRefund) = accountMap.addAccount(
+    function getAllInferenceLedgers() public view returns (InferenceLedger[] memory) {
+        return inferenceLedgerMap.getAllLedgers();
+    }
+
+    function getAllFineTuningLedgers() public view returns (FineTuningLedger[] memory) {
+        return fineTuningLedgerMap.getAllLedgers();
+    }
+
+    function addInferenceLedger(
+        address provider,
+        uint[2] calldata signer,
+        string memory additionalInfo
+    ) external payable {
+        (uint balance, uint pendingRefund) = inferenceLedgerMap.addLedger(
             msg.sender,
             provider,
             signer,
             msg.value,
             additionalInfo
         );
-        emit BalanceUpdated(msg.sender, provider, balance, pendingRefund);
     }
 
-    function deleteAccount(address provider) external {
-        accountMap.deleteAccount(msg.sender, provider);
+    function addFineTuningLedger(
+        address provider,
+        uint[2] calldata signer,
+        string memory additionalInfo
+    ) external payable {
+        (uint balance, uint pendingRefund) = fineTuningLedgerMap.addLedger(msg.sender, provider, msg.value);
+    }
+
+    function deleteInferenceLedger(address provider) external {
+        inferenceLedgerMap.deleteLedger(msg.sender, provider);
+    }
+
+    function deleteFineTuningLedger(address provider) external {
+        fineTuningLedgerMap.deleteLedger(msg.sender, provider);
     }
 
     function depositFund(address provider) external payable {
-        (uint balance, uint pendingRefund) = accountMap.depositFund(msg.sender, provider, msg.value);
-        emit BalanceUpdated(msg.sender, provider, balance, pendingRefund);
+        (uint balance, uint pendingRefund) = baseLedgerMap.depositFund(msg.sender, provider, msg.value);
     }
 
     function requestRefund(address provider, uint amount) external {
-        uint index = accountMap.requestRefund(msg.sender, provider, amount);
+        uint index = baseLedgerMap.requestRefund(msg.sender, provider, amount);
         emit RefundRequested(msg.sender, provider, index, block.timestamp);
     }
 
     function processRefund(address provider, uint[] calldata indices) external {
-        (uint totalAmount, uint balance, uint pendingRefund) = accountMap.processRefund(
+        (uint totalAmount, uint balance, uint pendingRefund) = ledgerMap.processRefund(
             msg.sender,
             provider,
             indices,
@@ -177,15 +211,15 @@ contract Serving is Ownable, Initializable {
             uint expectedUserAddress = inputs[start];
             uint firstRequestNonce = inputs[start + 2];
             uint lastRequestNonce = inputs[start + 3];
-            Account storage account = accountMap.getAccount(address(uint160(expectedUserAddress)), msg.sender);
-            if (account.signer[0] != inputs[start + 5] || account.signer[1] != inputs[start + 6]) {
-                revert InvalidProofInputs("signer key is incorrect");
+            Ledger storage ledger = ledgerMap.getLedger(address(uint160(expectedUserAddress)), msg.sender);
+            if (ledger.customerSigner[0] != inputs[start + 5] || ledger.customerSigner[1] != inputs[start + 6]) {
+                revert InvalidProofInputs("customer signer key is incorrect");
             }
-            if (account.nonce > firstRequestNonce) {
+            if (ledger.nonce > firstRequestNonce) {
                 revert InvalidProofInputs("initial nonce is incorrect");
             }
             for (uint chunkIdx = start; chunkIdx < end; chunkIdx += 7) {
-                uint userAddress = inputs[chunkIdx];
+                uint customerAddress = inputs[chunkIdx];
                 uint providerAddress = inputs[chunkIdx + 1];
                 lastRequestNonce = inputs[chunkIdx + 3];
                 uint cost = inputs[chunkIdx + 4];
@@ -195,38 +229,38 @@ contract Serving is Ownable, Initializable {
                     revert InvalidProofInputs("nonce overlapped");
                 }
 
-                if (userAddress != expectedUserAddress || providerAddress != expectedProviderAddress) {
+                if (customerAddress != expectedUserAddress || providerAddress != expectedProviderAddress) {
                     revert InvalidProofInputs(
-                        userAddress != expectedUserAddress
-                            ? "user address is incorrect"
+                        customerAddress != expectedUserAddress
+                            ? "customer address is incorrect"
                             : "provider address is incorrect"
                     );
                 }
 
                 totalCosts += cost;
             }
-            if (account.balance < totalCosts) {
+            if (ledger.balance < totalCosts) {
                 revert InvalidProofInputs("insufficient balance");
             }
-            _settleFees(account, totalCosts);
+            _settleFees(ledger, totalCosts);
             start = end;
-            account.nonce = lastRequestNonce;
+            ledger.nonce = lastRequestNonce;
         }
         if (start != inputs.length) {
             revert InvalidProofInputs("array segmentSize sum mismatches public input length");
         }
     }
 
-    function _settleFees(Account storage account, uint amount) private {
-        if (amount > (account.balance - account.pendingRefund)) {
-            uint remainingFee = amount - (account.balance - account.pendingRefund);
-            if (account.pendingRefund < remainingFee) {
+    function _settleFees(Ledger storage ledger, uint amount) private {
+        if (amount > (ledger.balance - ledger.pendingRefund)) {
+            uint remainingFee = amount - (ledger.balance - ledger.pendingRefund);
+            if (ledger.pendingRefund < remainingFee) {
                 revert InvalidProofInputs("insufficient balance in pendingRefund");
             }
 
-            account.pendingRefund -= remainingFee;
-            for (int i = int(account.refunds.length - 1); i >= 0; i--) {
-                Refund storage refund = account.refunds[uint(i)];
+            ledger.pendingRefund -= remainingFee;
+            for (int i = int(ledger.refunds.length - 1); i >= 0; i--) {
+                Refund storage refund = ledger.refunds[uint(i)];
                 if (refund.processed) {
                     continue;
                 }
@@ -243,8 +277,8 @@ contract Serving is Ownable, Initializable {
                 }
             }
         }
-        account.balance -= amount;
-        emit BalanceUpdated(account.user, msg.sender, account.balance, account.pendingRefund);
+        ledger.balance -= amount;
+        emit BalanceUpdated(ledger.customer, msg.sender, ledger.balance, ledger.pendingRefund);
         payable(msg.sender).transfer(amount);
     }
 }

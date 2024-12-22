@@ -12,7 +12,7 @@ struct Account {
     uint[2] userSigner;
     Refund[] refunds;
     string additionalInfo;
-    address providerSigningAddress;
+    string acknowledge;
     Deliverable[] deliverables;
 }
 
@@ -24,8 +24,8 @@ struct Refund {
 }
 
 struct Deliverable {
-    bytes16 jobID;
-    uint modelRootHash;
+    bytes16 id;
+    bytes modelRootHash;
 }
 
 library AccountLibrary {
@@ -151,13 +151,13 @@ library AccountLibrary {
         AccountMap storage map,
         address user,
         address provider,
-        address providerSigningAddress
+        string memory acknowledge
     ) internal {
         if (!_contains(map, _key(user, provider))) {
             revert AccountNotExists(user, provider);
         }
         Account storage account = _get(map, user, provider);
-        account.providerSigningAddress = providerSigningAddress;
+        account.acknowledge = acknowledge;
     }
 
     function updateDeliverables(
@@ -171,7 +171,7 @@ library AccountLibrary {
         }
         Account storage account = _get(map, user, provider);
         for (uint i = 0; i < account.deliverables.length; i++) {
-            if (account.deliverables[i].jobID == deliverable.jobID) {
+            if (account.deliverables[i].id == deliverable.id) {
                 revert("deliverable already exists.");
             }
         }
