@@ -14,7 +14,7 @@ const upgradeVerifier: DeployFunction = async function (hre: HardhatRuntimeEnvir
     if (typeof signer === "string") {
         signer = await hre.ethers.getSigner(signer);
     }
-    const serving_ = CONTRACTS.Serving.factory.connect(servingAddress, signer);
+    const serving_ = CONTRACTS.InferenceServing.factory.connect(servingAddress, signer);
 
     if (!(await serving_.initialized())) {
         console.log("serving contract is not initialized");

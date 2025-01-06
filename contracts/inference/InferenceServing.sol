@@ -3,9 +3,10 @@ pragma solidity >=0.8.0 <0.9.0;
 
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/utils/structs/EnumerableMap.sol";
-import "./utils/Initializable.sol";
-import "./Account.sol";
-import "./Service.sol";
+import "../utils/Initializable.sol";
+import "./InferenceAccount.sol";
+import "./InferenceService.sol";
+import "../ledger/LedgerManager.sol";
 
 struct VerifierInput {
     uint[] inProof;
@@ -22,13 +23,15 @@ interface IBatchVerifier {
     ) external view returns (bool);
 }
 
-contract Serving is Ownable, Initializable {
+contract InferenceServing is Ownable, Initializable, IServing {
     using AccountLibrary for AccountLibrary.AccountMap;
     using ServiceLibrary for ServiceLibrary.ServiceMap;
 
     uint public lockTime;
     address public batchVerifierAddress;
+    address public ledgerAddress;
     IBatchVerifier private batchVerifier;
+    ILedger private ledger;
     AccountLibrary.AccountMap private accountMap;
     ServiceLibrary.ServiceMap private serviceMap;
 
@@ -49,11 +52,23 @@ contract Serving is Ownable, Initializable {
 
     error InvalidProofInputs(string reason);
 
-    function initialize(uint _locktime, address _batchVerifierAddress, address owner) public onlyInitializeOnce {
+    function initialize(
+        uint _locktime,
+        address _batchVerifierAddress,
+        address _ledgerAddress,
+        address owner
+    ) public onlyInitializeOnce {
         _transferOwnership(owner);
         lockTime = _locktime;
         batchVerifierAddress = _batchVerifierAddress;
+        ledgerAddress = _ledgerAddress;
+        ledger = ILedger(ledgerAddress);
         batchVerifier = IBatchVerifier(batchVerifierAddress);
+    }
+
+    modifier onlyLedger() {
+        require(msg.sender == ledgerAddress, "Caller is not the ledger contract");
+        _;
     }
 
     function updateLockTime(uint _locktime) public onlyOwner {
@@ -73,41 +88,43 @@ contract Serving is Ownable, Initializable {
         return accountMap.getAllAccounts();
     }
 
-    function addAccount(address provider, uint[2] calldata signer, string memory additionalInfo) external payable {
-        (uint balance, uint pendingRefund) = accountMap.addAccount(
-            msg.sender,
-            provider,
-            signer,
-            msg.value,
-            additionalInfo
-        );
-        emit BalanceUpdated(msg.sender, provider, balance, pendingRefund);
+    function accountExists(address user, address provider) public view returns (bool) {
+        return accountMap.accountExists(user, provider);
     }
 
-    function deleteAccount(address provider) external {
-        accountMap.deleteAccount(msg.sender, provider);
+    function addAccount(
+        address user,
+        address provider,
+        uint[2] calldata signer,
+        string memory additionalInfo
+    ) external payable onlyLedger {
+        (uint balance, uint pendingRefund) = accountMap.addAccount(user, provider, signer, msg.value, additionalInfo);
+        emit BalanceUpdated(user, provider, balance, pendingRefund);
     }
 
-    function depositFund(address provider) external payable {
-        (uint balance, uint pendingRefund) = accountMap.depositFund(msg.sender, provider, msg.value);
-        emit BalanceUpdated(msg.sender, provider, balance, pendingRefund);
+    function deleteAccount(address user, address provider) external onlyLedger {
+        accountMap.deleteAccount(user, provider);
     }
 
-    function requestRefund(address provider, uint amount) external {
-        uint index = accountMap.requestRefund(msg.sender, provider, amount);
-        emit RefundRequested(msg.sender, provider, index, block.timestamp);
+    function depositFund(address user, address provider) external payable onlyLedger {
+        (uint balance, uint pendingRefund) = accountMap.depositFund(user, provider, msg.value);
+        emit BalanceUpdated(user, provider, balance, pendingRefund);
     }
 
-    function processRefund(address provider, uint[] calldata indices) external {
-        (uint totalAmount, uint balance, uint pendingRefund) = accountMap.processRefund(
-            msg.sender,
-            provider,
-            indices,
-            lockTime
-        );
+    function requestRefundAll(address user, address provider) external onlyLedger {
+        accountMap.requestRefundAll(user, provider);
+    }
 
+    function processRefund(
+        address user,
+        address provider
+    ) external onlyLedger returns (uint totalAmount, uint balance, uint pendingRefund) {
+        (totalAmount, balance, pendingRefund) = accountMap.processRefund(user, provider, lockTime);
+        if (totalAmount == 0) {
+            return (0, balance, pendingRefund);
+        }
         payable(msg.sender).transfer(totalAmount);
-        emit BalanceUpdated(msg.sender, provider, balance, pendingRefund);
+        emit BalanceUpdated(user, provider, balance, pendingRefund);
     }
 
     function getService(address provider, string memory name) public view returns (Service memory service) {
@@ -244,6 +261,7 @@ contract Serving is Ownable, Initializable {
             }
         }
         account.balance -= amount;
+        ledger.spendFund(account.user, amount);
         emit BalanceUpdated(account.user, msg.sender, account.balance, account.pendingRefund);
         payable(msg.sender).transfer(amount);
     }

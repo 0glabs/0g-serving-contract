@@ -9,9 +9,10 @@ struct Account {
     uint nonce;
     uint balance;
     uint pendingRefund;
-    uint[2] signer;
     Refund[] refunds;
     string additionalInfo;
+    address providerSigner;
+    Deliverable[] deliverables;
 }
 
 struct Refund {
@@ -21,10 +22,16 @@ struct Refund {
     bool processed;
 }
 
+struct Deliverable {
+    bytes modelRootHash;
+    bytes encryptedSecret;
+    bool acknowledged;
+}
+
 library AccountLibrary {
     using EnumerableSet for EnumerableSet.Bytes32Set;
 
-    error AccountNotexists(address user, address provider);
+    error AccountNotExists(address user, address provider);
     error AccountExists(address user, address provider);
     error InsufficientBalance(address user, address provider);
     error RefundInvalid(address user, address provider, uint index);
@@ -35,6 +42,8 @@ library AccountLibrary {
         EnumerableSet.Bytes32Set _keys;
         mapping(bytes32 => Account) _values;
     }
+
+    // user functions
 
     function getAccount(
         AccountMap storage map,
@@ -53,11 +62,14 @@ library AccountLibrary {
         }
     }
 
+    function accountExists(AccountMap storage map, address user, address provider) internal view returns (bool) {
+        return _contains(map, _key(user, provider));
+    }
+
     function addAccount(
         AccountMap storage map,
         address user,
         address provider,
-        uint[2] calldata signer,
         uint amount,
         string memory additionalInfo
     ) internal returns (uint, uint) {
@@ -65,14 +77,14 @@ library AccountLibrary {
         if (_contains(map, key)) {
             revert AccountExists(user, provider);
         }
-        _set(map, key, user, provider, signer, amount, additionalInfo);
+        _set(map, key, user, provider, amount, additionalInfo);
         return (amount, 0);
     }
 
     function deleteAccount(AccountMap storage map, address user, address provider) internal {
         bytes32 key = _key(user, provider);
         if (!_contains(map, key)) {
-            revert AccountNotexists(user, provider);
+            return;
         }
         map._keys.remove(key);
         delete map._values[key];
@@ -86,7 +98,7 @@ library AccountLibrary {
     ) internal returns (uint, uint) {
         bytes32 key = _key(user, provider);
         if (!_contains(map, key)) {
-            revert AccountNotexists(user, provider);
+            revert AccountNotExists(user, provider);
         }
         Account storage account = _get(map, user, provider);
         account.balance += amount;
@@ -108,37 +120,84 @@ library AccountLibrary {
         return account.refunds.length - 1;
     }
 
+    function requestRefundAll(AccountMap storage map, address user, address provider) internal {
+        Account storage account = _get(map, user, provider);
+        uint amount = account.balance - account.pendingRefund;
+        if (amount == 0) {
+            return;
+        }
+        account.refunds.push(Refund(account.refunds.length, amount, block.timestamp, false));
+        account.pendingRefund += amount;
+    }
+
     function processRefund(
         AccountMap storage map,
         address user,
         address provider,
-        uint[] memory indices,
         uint lockTime
     ) internal returns (uint totalAmount, uint balance, uint pendingRefund) {
         Account storage account = _get(map, user, provider);
         totalAmount = 0;
 
-        for (uint i = 0; i < indices.length; i++) {
-            uint index = indices[i];
-            if (index >= account.refunds.length) {
-                revert RefundInvalid(user, provider, index);
-            }
-            Refund storage refund = account.refunds[index];
+        for (uint i = 0; i < account.refunds.length; i++) {
+            Refund storage refund = account.refunds[i];
             if (refund.processed) {
-                revert RefundProcessed(user, provider, index);
+                continue;
             }
             if (block.timestamp < refund.createdAt + lockTime) {
-                revert RefundLocked(user, provider, index);
+                continue;
             }
             account.balance -= refund.amount;
             account.pendingRefund -= refund.amount;
-            refund.processed = true;
             totalAmount += refund.amount;
+            delete account.refunds[i];
         }
 
         balance = account.balance;
         pendingRefund = account.pendingRefund;
     }
+
+    function acknowledgeProviderSigner(
+        AccountMap storage map,
+        address user,
+        address provider,
+        address providerSigner
+    ) internal {
+        if (!_contains(map, _key(user, provider))) {
+            revert AccountNotExists(user, provider);
+        }
+        Account storage account = _get(map, user, provider);
+        account.providerSigner = providerSigner;
+    }
+
+    function acknowledgeDeliverable(AccountMap storage map, address user, address provider, uint index) internal {
+        if (!_contains(map, _key(user, provider))) {
+            revert AccountNotExists(user, provider);
+        }
+        Account storage account = _get(map, user, provider);
+        if (account.deliverables[index].modelRootHash.length == 0) {
+            revert("deliverable does not exist.");
+        }
+        account.deliverables[index].acknowledged = true;
+    }
+
+    // provider functions
+
+    function addDeliverable(
+        AccountMap storage map,
+        address user,
+        address provider,
+        bytes memory modelRootHash
+    ) internal {
+        if (!_contains(map, _key(user, provider))) {
+            revert AccountNotExists(user, provider);
+        }
+        Account storage account = _get(map, user, provider);
+        Deliverable memory deliverable = Deliverable(modelRootHash, "", false);
+        account.deliverables.push(deliverable);
+    }
+
+    // common functions
 
     function _at(AccountMap storage map, uint index) internal view returns (Account storage) {
         bytes32 key = map._keys.at(index);
@@ -157,7 +216,7 @@ library AccountLibrary {
         bytes32 key = _key(user, provider);
         Account storage value = map._values[key];
         if (!_contains(map, key)) {
-            revert AccountNotexists(user, provider);
+            revert AccountNotExists(user, provider);
         }
         return value;
     }
@@ -167,7 +226,6 @@ library AccountLibrary {
         bytes32 key,
         address user,
         address provider,
-        uint[2] calldata signer,
         uint balance,
         string memory additionalInfo
     ) internal {
@@ -175,7 +233,6 @@ library AccountLibrary {
         account.balance = balance;
         account.user = user;
         account.provider = provider;
-        account.signer = signer;
         account.additionalInfo = additionalInfo;
         map._keys.add(key);
     }
