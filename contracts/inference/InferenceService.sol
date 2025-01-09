@@ -18,7 +18,7 @@ struct Service {
 library ServiceLibrary {
     using EnumerableSet for EnumerableSet.Bytes32Set;
 
-    error ServiceNotexist(address provider, string name);
+    error ServiceNotExist(address provider, string name);
 
     struct ServiceMap {
         EnumerableSet.Bytes32Set _keys;
@@ -85,7 +85,7 @@ library ServiceLibrary {
     function removeService(ServiceMap storage map, address provider, string memory name) internal {
         bytes32 key = _key(provider, name);
         if (!_contains(map, key)) {
-            revert ServiceNotexist(provider, name);
+            revert ServiceNotExist(provider, name);
         }
         _remove(map, key);
     }
@@ -108,7 +108,7 @@ library ServiceLibrary {
         bytes32 key = _key(provider, name);
         Service storage value = map._values[key];
         if (!_contains(map, key)) {
-            revert ServiceNotexist(provider, name);
+            revert ServiceNotExist(provider, name);
         }
         return value;
     }

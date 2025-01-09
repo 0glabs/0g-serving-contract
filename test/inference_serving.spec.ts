@@ -2,37 +2,43 @@ import { anyValue } from "@nomicfoundation/hardhat-chai-matchers/withArgs";
 import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
 import { time } from "@nomicfoundation/hardhat-toolbox/network-helpers";
 import { expect } from "chai";
-import { Block, ContractTransactionResponse, TransactionReceipt } from "ethers";
+import { Block, TransactionReceipt } from "ethers";
 import { deployments, ethers } from "hardhat";
 import { Deployment } from "hardhat-deploy/types";
 import { beforeEach } from "mocha";
-import { publicKey, succeedFee, succeedInProof, succeedProofInputs } from "../src/utils/zk_settlement_calldata/golden";
 import {
     doubleSpendingInProof,
     doubleSpendingProofInputs,
-} from "../src/utils/zk_settlement_calldata/golden/double_spending";
-import {
     insufficientBalanceInProof,
     insufficientBalanceProofInputs,
-} from "../src/utils/zk_settlement_calldata/golden/insufficient_balance";
-import { Serving } from "../typechain-types";
+    publicKey,
+    succeedFee,
+    succeedInProof,
+    succeedProofInputs,
+} from "../src/utils/zk_settlement_calldata/golden";
+import { InferenceServing as Serving, LedgerManager } from "../typechain-types";
 import {
     AccountStructOutput,
     ServiceStructOutput,
     VerifierInputStruct,
-} from "../typechain-types/contracts/Serving.sol/Serving";
+} from "../typechain-types/contracts/inference/InferenceServing.sol/InferenceServing";
 
-describe("Serving", () => {
+describe("Inference Serving", () => {
     let serving: Serving;
     let servingDeployment: Deployment;
+    let ledger: LedgerManager;
+    let LedgerManagerDeployment: Deployment;
     let owner: HardhatEthersSigner,
         user1: HardhatEthersSigner,
         provider1: HardhatEthersSigner,
         provider2: HardhatEthersSigner;
     let ownerAddress: string, user1Address: string, provider1Address: string, provider2Address: string;
 
-    const ownerInitialBalance = 1000;
-    const user1InitialBalance = 2000;
+    const ownerInitialLedgerBalance = 1000;
+    const ownerInitialInferenceBalance = ownerInitialLedgerBalance / 4;
+
+    const user1InitialLedgerBalance = 2000;
+    const user1InitialInferenceBalance = user1InitialLedgerBalance / 4;
     const lockTime = 24 * 60 * 60;
 
     const provider1ServiceName = "test-provider-1";
@@ -54,9 +60,11 @@ describe("Serving", () => {
     const additionalData = "U2FsdGVkX18cuPVgRkw/sHPq2YzJE5MyczGO0vOTQBBiS9A4Pka5woWK82fZr0Xjh8mDhjlW9ARsX6e6sKDChg==";
 
     beforeEach(async () => {
-        await deployments.fixture(["Serving"]);
-        servingDeployment = await deployments.get("Serving");
-        serving = await ethers.getContractAt("Serving", servingDeployment.address);
+        await deployments.fixture(["compute-network"]);
+        servingDeployment = await deployments.get("InferenceServing");
+        LedgerManagerDeployment = await deployments.get("LedgerManager");
+        serving = await ethers.getContractAt("InferenceServing", servingDeployment.address);
+        ledger = await ethers.getContractAt("LedgerManager", LedgerManagerDeployment.address);
 
         [owner, user1, provider1, provider2] = await ethers.getSigners();
         [ownerAddress, user1Address, provider1Address, provider2Address] = await Promise.all([
@@ -68,11 +76,19 @@ describe("Serving", () => {
     });
 
     beforeEach(async () => {
-        const initializations: ContractTransactionResponse[] = await Promise.all([
-            serving.addAccount(provider1Address, publicKey, additionalData, { value: ownerInitialBalance }),
-            serving
-                .connect(user1)
-                .addAccount(provider1Address, publicKey, additionalData, { value: user1InitialBalance }),
+        await Promise.all([
+            ledger.addLedger(publicKey, additionalData, {
+                value: ownerInitialLedgerBalance,
+            }),
+            ledger.connect(user1).addLedger(publicKey, additionalData, {
+                value: user1InitialLedgerBalance,
+            }),
+        ]);
+
+        await Promise.all([
+            ledger.transferFund(provider1Address, "inference", ownerInitialInferenceBalance),
+            ledger.connect(user1).transferFund(provider1Address, "inference", user1InitialInferenceBalance),
+
             serving
                 .connect(provider1)
                 .addOrUpdateService(
@@ -96,8 +112,6 @@ describe("Serving", () => {
                     provider2OutputPrice
                 ),
         ]);
-
-        await initializations[2].wait();
     });
 
     describe("Owner", () => {
@@ -118,12 +132,12 @@ describe("Serving", () => {
             expect(result).to.equal(BigInt(lockTime));
         });
 
-        it("should deposit fund and update balance", async () => {
-            const depositAmount = 1000;
-            await serving.depositFund(provider1Address, { value: depositAmount });
+        it("should transfer fund and update balance", async () => {
+            const transferAmount = (ownerInitialLedgerBalance - ownerInitialInferenceBalance) / 3;
+            await ledger.transferFund(provider1Address, "inference", transferAmount);
 
             const account = await serving.getAccount(ownerAddress, provider1);
-            expect(account.balance).to.equal(BigInt(ownerInitialBalance + depositAmount));
+            expect(account.balance).to.equal(BigInt(ownerInitialInferenceBalance + transferAmount));
         });
 
         it("should get all users", async () => {
@@ -134,37 +148,30 @@ describe("Serving", () => {
 
             expect(userAddresses).to.have.members([ownerAddress, user1Address]);
             expect(providerAddresses).to.have.members([provider1Address, provider1Address]);
-            expect(balances).to.have.members([BigInt(ownerInitialBalance), BigInt(user1InitialBalance)]);
+            expect(balances).to.have.members([
+                BigInt(ownerInitialInferenceBalance),
+                BigInt(user1InitialInferenceBalance),
+            ]);
         });
     });
 
     describe("Process refund", () => {
-        let unlockTime: number, refundIndex1: bigint, refundIndex2: bigint;
-        const refundAmount1 = 100;
-        const refundAmount2 = 200;
+        let unlockTime: number;
 
         beforeEach(async () => {
-            const res1 = await serving.requestRefund(provider1, refundAmount1);
-            await res1.wait();
-            const res2 = await serving.requestRefund(provider1, refundAmount2);
-            const receipt = await res2.wait();
+            const res = await ledger.retrieveFund([provider1Address], "inference");
+            const receipt = await res.wait();
 
             const block = await ethers.provider.getBlock((receipt as TransactionReceipt).blockNumber);
             unlockTime = (block as Block).timestamp + lockTime;
-            refundIndex1 = (await serving.queryFilter(serving.filters.RefundRequested, -1))[0].args[2];
-            refundIndex2 = (await serving.queryFilter(serving.filters.RefundRequested, -1))[1].args[2];
-        });
-
-        it("should revert if called too soon", async () => {
-            await expect(serving.processRefund(provider1, [refundIndex1, refundIndex2])).to.be.reverted;
         });
 
         it("should succeeded if the unlockTime has arrived and called", async () => {
             await time.increaseTo(unlockTime);
 
-            await expect(serving.processRefund(provider1, [refundIndex1, refundIndex2])).not.to.be.reverted;
+            await ledger.retrieveFund([provider1Address], "inference");
             const account = await serving.getAccount(ownerAddress, provider1);
-            expect(account.balance).to.be.equal(BigInt(ownerInitialBalance - refundAmount1 - refundAmount2));
+            expect(account.balance).to.be.equal(BigInt(0));
         });
     });
 
@@ -271,9 +278,9 @@ describe("Serving", () => {
 
             await expect(serving.connect(provider1).settleFees(verifierInput))
                 .to.emit(serving, "BalanceUpdated")
-                .withArgs(ownerAddress, provider1Address, ownerInitialBalance - succeedFee, 0)
+                .withArgs(ownerAddress, provider1Address, ownerInitialInferenceBalance - succeedFee, 0)
                 .and.to.emit(serving, "BalanceUpdated")
-                .withArgs(user1Address, provider1Address, user1InitialBalance - succeedFee, 0);
+                .withArgs(user1Address, provider1Address, user1InitialInferenceBalance - succeedFee, 0);
         });
 
         it("should failed due to double spending", async () => {
@@ -301,7 +308,7 @@ describe("Serving", () => {
 
     describe("deleteAccount", () => {
         it("should delete account", async () => {
-            await expect(serving.deleteAccount(provider1Address)).not.to.be.reverted;
+            await expect(ledger.deleteLedger(ownerAddress)).not.to.be.reverted;
             const accounts = await serving.getAllAccounts();
             expect(accounts.length).to.equal(1);
         });

@@ -44,7 +44,9 @@ export const DEFAULT_ADMIN_ROLE = "0x0000000000000000000000000000000000000000000
 export const PAUSER_ROLE = ethers.id("PAUSER_ROLE");
 
 export const CONTRACTS = {
-    Serving: new ContractMeta(Factories.Serving__factory),
+    LedgerManager: new ContractMeta(Factories.LedgerManager__factory),
+    InferenceServing: new ContractMeta(Factories.InferenceServing__factory),
+    FineTuningServing: new ContractMeta(Factories.FineTuningServing__factory),
     Verifier: new ContractMeta(Factories.Wrapper__factory),
 } as const;
 
