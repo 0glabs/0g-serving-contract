@@ -176,7 +176,7 @@ describe("Ledger manager", () => {
         let accounts = await fineTuningServing.getAllAccounts();
         expect(accounts.length).to.equal(2);
 
-        await expect(ledger.deleteLedger(ownerAddress)).not.to.be.reverted;
+        await expect(ledger.deleteLedger()).not.to.be.reverted;
         accounts = await fineTuningServing.getAllAccounts();
         expect(accounts.length).to.equal(1);
     });

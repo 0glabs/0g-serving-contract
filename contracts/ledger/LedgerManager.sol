@@ -172,10 +172,10 @@ contract LedgerManager is Ownable, Initializable {
         ledger.availableBalance += totalAmount;
     }
 
-    function deleteLedger(address user) external {
-        bytes32 key = _key(user);
+    function deleteLedger() external {
+        bytes32 key = _key(msg.sender);
         if (!_contains(key)) {
-            revert LedgerNotExists(user);
+            revert LedgerNotExists(msg.sender);
         }
         Ledger storage ledger = _get(msg.sender);
         for (uint i = 0; i < ledger.inferenceProviders.length; i++) {

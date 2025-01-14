@@ -314,7 +314,7 @@ describe("Fine tuning serving", () => {
 
     describe("deleteAccount", () => {
         it("should delete account", async () => {
-            await expect(ledger.deleteLedger(ownerAddress)).not.to.be.reverted;
+            await expect(ledger.deleteLedger()).not.to.be.reverted;
             const accounts = await serving.getAllAccounts();
             expect(accounts.length).to.equal(1);
         });
