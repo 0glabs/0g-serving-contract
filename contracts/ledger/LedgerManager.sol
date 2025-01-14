@@ -67,6 +67,14 @@ contract LedgerManager is Ownable, Initializable {
         inferenceAccount = IServing(inferenceAddress);
     }
 
+    modifier onlyServing() {
+        require(
+            msg.sender == fineTuningAddress || msg.sender == inferenceAddress,
+            "Caller is not the fine tuning or inference contract"
+        );
+        _;
+    }
+
     function getLedger(address user) public view returns (Ledger memory) {
         return _get(user);
     }
@@ -193,7 +201,7 @@ contract LedgerManager is Ownable, Initializable {
         }
     }
 
-    function spendFund(address user, uint amount) external {
+    function spendFund(address user, uint amount) external onlyServing {
         Ledger storage ledger = _get(user);
         require((ledger.totalBalance - ledger.availableBalance) >= amount, "Insufficient balance");
 
