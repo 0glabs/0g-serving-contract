@@ -141,6 +141,10 @@ contract FineTuningServing is Ownable, Initializable, IServing {
         accountMap.addDeliverable(user, msg.sender, modelRootHash);
     }
 
+    function getDeliverable(address user, address provider, uint index) public view returns (Deliverable memory) {
+        return accountMap.getAccount(user, provider).deliverables[index];
+    }
+
     function settleFees(VerifierInput calldata verifierInput) external {
         Account storage account = accountMap.getAccount(verifierInput.user, msg.sender);
         if (account.providerSigner != verifierInput.providerSigner) {
