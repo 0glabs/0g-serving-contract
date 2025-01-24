@@ -32,14 +32,13 @@ contract FineTuningServing is Ownable, Initializable, IServing {
     event RefundRequested(address indexed user, address indexed provider, uint indexed index, uint timestamp);
     event ServiceUpdated(
         address indexed user,
-        string indexed name,
         string url,
         Quota quota,
         uint pricePerToken,
         address providerSigner,
         bool occupied
     );
-    event ServiceRemoved(address indexed user, string indexed name);
+    event ServiceRemoved(address indexed user);
     error InvalidVerifierInput(string reason);
 
     function initialize(uint _locktime, address _ledgerAddress, address owner) public onlyInitializeOnce {
@@ -102,8 +101,8 @@ contract FineTuningServing is Ownable, Initializable, IServing {
         emit BalanceUpdated(user, provider, balance, pendingRefund);
     }
 
-    function getService(address provider, string memory name) public view returns (Service memory service) {
-        service = serviceMap.getService(provider, name);
+    function getService(address provider) public view returns (Service memory service) {
+        service = serviceMap.getService(provider);
     }
 
     function getAllServices() public view returns (Service[] memory services) {
@@ -121,20 +120,19 @@ contract FineTuningServing is Ownable, Initializable, IServing {
     // provider functions
 
     function addOrUpdateService(
-        string memory name,
         string calldata url,
         Quota memory quota,
         uint pricePerToken,
         address providerSigner,
         bool occupied
     ) external {
-        serviceMap.addOrUpdateService(msg.sender, name, url, quota, pricePerToken, providerSigner, occupied);
-        emit ServiceUpdated(msg.sender, name, url, quota, pricePerToken, providerSigner, occupied);
+        serviceMap.addOrUpdateService(msg.sender, url, quota, pricePerToken, providerSigner, occupied);
+        emit ServiceUpdated(msg.sender, url, quota, pricePerToken, providerSigner, occupied);
     }
 
-    function removeService(string memory name) external {
-        serviceMap.removeService(msg.sender, name);
-        emit ServiceRemoved(msg.sender, name);
+    function removeService() external {
+        serviceMap.removeService(msg.sender);
+        emit ServiceRemoved(msg.sender);
     }
 
     function addDeliverable(address user, bytes memory modelRootHash) external {

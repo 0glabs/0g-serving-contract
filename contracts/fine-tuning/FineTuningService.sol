@@ -5,7 +5,6 @@ import "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
 
 struct Service {
     address provider;
-    string name;
     string url;
     Quota quota;
     uint pricePerToken;
@@ -24,19 +23,15 @@ struct Quota {
 library ServiceLibrary {
     using EnumerableSet for EnumerableSet.Bytes32Set;
 
-    error ServiceNotExist(address provider, string name);
+    error ServiceNotExist(address provider);
 
     struct ServiceMap {
         EnumerableSet.Bytes32Set _keys;
         mapping(bytes32 => Service) _values;
     }
 
-    function getService(
-        ServiceMap storage map,
-        address provider,
-        string memory name
-    ) internal view returns (Service storage) {
-        return _get(map, provider, name);
+    function getService(ServiceMap storage map, address provider) internal view returns (Service storage) {
+        return _get(map, provider);
     }
 
     function getAllServices(ServiceMap storage map) internal view returns (Service[] memory services) {
@@ -50,20 +45,18 @@ library ServiceLibrary {
     function addOrUpdateService(
         ServiceMap storage map,
         address provider,
-        string memory name,
         string memory url,
         Quota memory quota,
         uint pricePerToken,
         address providerSigner,
         bool occupied
     ) internal {
-        bytes32 key = _key(provider, name);
+        bytes32 key = _key(provider);
         if (!_contains(map, key)) {
-            _set(map, key, Service(provider, name, url, quota, pricePerToken, providerSigner, false));
+            _set(map, key, Service(provider, url, quota, pricePerToken, providerSigner, false));
             return;
         }
-        Service storage value = _get(map, provider, name);
-        value.name = name;
+        Service storage value = _get(map, provider);
         value.url = url;
         value.quota = quota;
         value.pricePerToken = pricePerToken;
@@ -71,10 +64,10 @@ library ServiceLibrary {
         value.occupied = occupied;
     }
 
-    function removeService(ServiceMap storage map, address provider, string memory name) internal {
-        bytes32 key = _key(provider, name);
+    function removeService(ServiceMap storage map, address provider) internal {
+        bytes32 key = _key(provider);
         if (!_contains(map, key)) {
-            revert ServiceNotExist(provider, name);
+            revert ServiceNotExist(provider);
         }
         _remove(map, key);
     }
@@ -89,15 +82,11 @@ library ServiceLibrary {
         return map._keys.add(key);
     }
 
-    function _get(
-        ServiceMap storage map,
-        address provider,
-        string memory name
-    ) internal view returns (Service storage) {
-        bytes32 key = _key(provider, name);
+    function _get(ServiceMap storage map, address provider) internal view returns (Service storage) {
+        bytes32 key = _key(provider);
         Service storage value = map._values[key];
         if (!_contains(map, key)) {
-            revert ServiceNotExist(provider, name);
+            revert ServiceNotExist(provider);
         }
         return value;
     }
@@ -115,7 +104,7 @@ library ServiceLibrary {
         return map._keys.length();
     }
 
-    function _key(address provider, string memory name) internal pure returns (bytes32) {
-        return keccak256(abi.encode(provider, name));
+    function _key(address provider) internal pure returns (bytes32) {
+        return keccak256(abi.encode(provider));
     }
 }

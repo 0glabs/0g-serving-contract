@@ -35,7 +35,6 @@ describe("Fine tuning serving", () => {
     const user1InitialFineTuningBalance = user1InitialLedgerBalance / 4;
     const lockTime = 24 * 60 * 60;
 
-    const provider1ServiceName = "test-provider-1";
     const provider1Quota: QuotaStruct = {
         cpuCount: BigInt(8),
         nodeMemory: BigInt(32),
@@ -47,7 +46,6 @@ describe("Fine tuning serving", () => {
     const provider1Url = "https://example-1.com";
     const provider1Signer = walletMockTEE.address;
 
-    const provider2ServiceName = "test-provider-2";
     const provider2Quota: QuotaStruct = {
         cpuCount: BigInt(8),
         nodeMemory: BigInt(32),
@@ -93,24 +91,10 @@ describe("Fine tuning serving", () => {
 
             serving
                 .connect(provider1)
-                .addOrUpdateService(
-                    provider1ServiceName,
-                    provider1Url,
-                    provider1Quota,
-                    provider1PricePerToken,
-                    provider1Signer,
-                    false
-                ),
+                .addOrUpdateService(provider1Url, provider1Quota, provider1PricePerToken, provider1Signer, false),
             serving
                 .connect(provider2)
-                .addOrUpdateService(
-                    provider2ServiceName,
-                    provider2Url,
-                    provider2Quota,
-                    provider2PricePerToken,
-                    provider2Signer,
-                    false
-                ),
+                .addOrUpdateService(provider2Url, provider2Quota, provider2PricePerToken, provider2Signer, false),
         ]);
     });
 
@@ -177,7 +161,7 @@ describe("Fine tuning serving", () => {
 
     describe("Service provider", () => {
         it("should get service", async () => {
-            const service = await serving.getService(provider1Address, provider1ServiceName);
+            const service = await serving.getService(provider1Address);
 
             expect(service.url).to.equal(provider1Url);
             expect(service.quota.cpuCount).to.equal(provider1Quota.cpuCount);
@@ -193,14 +177,12 @@ describe("Fine tuning serving", () => {
         it("should get all services", async () => {
             const services = await serving.getAllServices();
             const addresses = (services as ServiceStructOutput[]).map((s) => s.provider);
-            const names = (services as ServiceStructOutput[]).map((s) => s.name);
             const urls = (services as ServiceStructOutput[]).map((s) => s.url);
             const pricePerTokens = (services as ServiceStructOutput[]).map((s) => s.pricePerToken);
             const providerSigners = (services as ServiceStructOutput[]).map((s) => s.providerSigner);
             const occupieds = (services as ServiceStructOutput[]).map((s) => s.occupied);
 
             expect(addresses).to.have.members([provider1Address, provider2Address]);
-            expect(names).to.have.members([provider1ServiceName, provider2ServiceName]);
             expect(urls).to.have.members([provider1Url, provider2Url]);
             expect(pricePerTokens).to.have.members([BigInt(provider1PricePerToken), BigInt(provider2PricePerToken)]);
             expect(providerSigners).to.have.members([provider1Signer, provider2Signer]);
@@ -224,7 +206,6 @@ describe("Fine tuning serving", () => {
                 serving
                     .connect(provider1)
                     .addOrUpdateService(
-                        provider1ServiceName,
                         modifiedPriceUrl,
                         modifiedQuota,
                         modifiedPricePerToken,
@@ -235,7 +216,6 @@ describe("Fine tuning serving", () => {
                 .to.emit(serving, "ServiceUpdated")
                 .withArgs(
                     provider1Address,
-                    provider1ServiceName,
                     modifiedPriceUrl,
                     Object.values(modifiedQuota),
                     modifiedPricePerToken,
@@ -245,7 +225,7 @@ describe("Fine tuning serving", () => {
                     modifiedOccupied
                 );
 
-            const service = await serving.getService(provider1Address, provider1ServiceName);
+            const service = await serving.getService(provider1Address);
 
             expect(service.url).to.equal(modifiedPriceUrl);
             expect(service.quota.cpuCount).to.equal(modifiedQuota.cpuCount);
@@ -259,9 +239,9 @@ describe("Fine tuning serving", () => {
         });
 
         it("should remove service correctly", async function () {
-            await expect(serving.connect(provider1).removeService(provider1ServiceName))
+            await expect(serving.connect(provider1).removeService())
                 .to.emit(serving, "ServiceRemoved")
-                .withArgs(provider1Address, "0x" + Buffer.from(provider1ServiceName).toString("hex"));
+                .withArgs(provider1Address);
 
             const services = await serving.getAllServices();
             expect(services.length).to.equal(1);
