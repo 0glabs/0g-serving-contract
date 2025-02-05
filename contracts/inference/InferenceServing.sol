@@ -39,7 +39,6 @@ contract InferenceServing is Ownable, Initializable, IServing {
     event RefundRequested(address indexed user, address indexed provider, uint indexed index, uint timestamp);
     event ServiceUpdated(
         address indexed service,
-        string indexed name,
         string serviceType,
         string url,
         uint inputPrice,
@@ -48,7 +47,7 @@ contract InferenceServing is Ownable, Initializable, IServing {
         string model,
         string verifiability
     );
-    event ServiceRemoved(address indexed service, string indexed name);
+    event ServiceRemoved(address indexed service);
 
     error InvalidProofInputs(string reason);
 
@@ -127,8 +126,8 @@ contract InferenceServing is Ownable, Initializable, IServing {
         emit BalanceUpdated(user, provider, balance, pendingRefund);
     }
 
-    function getService(address provider, string memory name) public view returns (Service memory service) {
-        service = serviceMap.getService(provider, name);
+    function getService(address provider) public view returns (Service memory service) {
+        service = serviceMap.getService(provider);
     }
 
     function getAllServices() public view returns (Service[] memory services) {
@@ -136,7 +135,6 @@ contract InferenceServing is Ownable, Initializable, IServing {
     }
 
     function addOrUpdateService(
-        string memory name,
         string memory serviceType,
         string calldata url,
         string calldata model,
@@ -144,19 +142,9 @@ contract InferenceServing is Ownable, Initializable, IServing {
         uint inputPrice,
         uint outputPrice
     ) external {
-        serviceMap.addOrUpdateService(
-            msg.sender,
-            name,
-            serviceType,
-            url,
-            model,
-            verifiability,
-            inputPrice,
-            outputPrice
-        );
+        serviceMap.addOrUpdateService(msg.sender, serviceType, url, model, verifiability, inputPrice, outputPrice);
         emit ServiceUpdated(
             msg.sender,
-            name,
             serviceType,
             url,
             inputPrice,
@@ -167,9 +155,9 @@ contract InferenceServing is Ownable, Initializable, IServing {
         );
     }
 
-    function removeService(string memory name) external {
-        serviceMap.removeService(msg.sender, name);
-        emit ServiceRemoved(msg.sender, name);
+    function removeService() external {
+        serviceMap.removeService(msg.sender);
+        emit ServiceRemoved(msg.sender);
     }
 
     function settleFees(VerifierInput calldata verifierInput) external {

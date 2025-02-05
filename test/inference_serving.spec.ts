@@ -41,7 +41,6 @@ describe("Inference Serving", () => {
     const user1InitialInferenceBalance = user1InitialLedgerBalance / 4;
     const lockTime = 24 * 60 * 60;
 
-    const provider1ServiceName = "test-provider-1";
     const provider1ServiceType = "HTTP";
     const provider1InputPrice = 100;
     const provider1OutputPrice = 100;
@@ -49,7 +48,6 @@ describe("Inference Serving", () => {
     const provider1Model = "llama-8b";
     const provider1Verifiability = "SPML";
 
-    const provider2ServiceName = "test-provider-2";
     const provider2ServiceType = "HTTP";
     const provider2InputPrice = 100;
     const provider2OutputPrice = 100;
@@ -92,7 +90,6 @@ describe("Inference Serving", () => {
             serving
                 .connect(provider1)
                 .addOrUpdateService(
-                    provider1ServiceName,
                     provider1ServiceType,
                     provider1Url,
                     provider1Model,
@@ -103,7 +100,6 @@ describe("Inference Serving", () => {
             serving
                 .connect(provider2)
                 .addOrUpdateService(
-                    provider2ServiceName,
                     provider2ServiceType,
                     provider2Url,
                     provider2Model,
@@ -177,7 +173,7 @@ describe("Inference Serving", () => {
 
     describe("Service provider", () => {
         it("should get service", async () => {
-            const service = await serving.getService(provider1Address, provider1ServiceName);
+            const service = await serving.getService(provider1Address);
 
             expect(service.serviceType).to.equal(provider1ServiceType);
             expect(service.url).to.equal(provider1Url);
@@ -191,7 +187,6 @@ describe("Inference Serving", () => {
         it("should get all services", async () => {
             const services = await serving.getAllServices();
             const addresses = (services as ServiceStructOutput[]).map((s) => s.provider);
-            const names = (services as ServiceStructOutput[]).map((s) => s.name);
             const serviceTypes = (services as ServiceStructOutput[]).map((s) => s.serviceType);
             const urls = (services as ServiceStructOutput[]).map((s) => s.url);
             const models = (services as ServiceStructOutput[]).map((s) => s.model);
@@ -201,7 +196,6 @@ describe("Inference Serving", () => {
             const updatedAts = (services as ServiceStructOutput[]).map((s) => s.updatedAt);
 
             expect(addresses).to.have.members([provider1Address, provider2Address]);
-            expect(names).to.have.members([provider1ServiceName, provider2ServiceName]);
             expect(serviceTypes).to.have.members([provider1ServiceType, provider2ServiceType]);
             expect(urls).to.have.members([provider1Url, provider2Url]);
             expect(models).to.have.members([provider1Model, provider2Model]);
@@ -224,7 +218,6 @@ describe("Inference Serving", () => {
                 serving
                     .connect(provider1)
                     .addOrUpdateService(
-                        provider1ServiceName,
                         modifiedServiceType,
                         modifiedPriceUrl,
                         modifiedModel,
@@ -236,7 +229,6 @@ describe("Inference Serving", () => {
                 .to.emit(serving, "ServiceUpdated")
                 .withArgs(
                     provider1Address,
-                    "0x" + Buffer.from(provider1ServiceName).toString("hex"),
                     modifiedServiceType,
                     modifiedPriceUrl,
                     modifiedInputPrice,
@@ -246,7 +238,7 @@ describe("Inference Serving", () => {
                     modifiedVerifiability
                 );
 
-            const service = await serving.getService(provider1Address, provider1ServiceName);
+            const service = await serving.getService(provider1Address);
 
             expect(service.serviceType).to.equal(modifiedServiceType);
             expect(service.url).to.equal(modifiedPriceUrl);
@@ -258,9 +250,9 @@ describe("Inference Serving", () => {
         });
 
         it("should remove service correctly", async function () {
-            await expect(serving.connect(provider1).removeService(provider1ServiceName))
+            await expect(serving.connect(provider1).removeService())
                 .to.emit(serving, "ServiceRemoved")
-                .withArgs(provider1Address, "0x" + Buffer.from(provider1ServiceName).toString("hex"));
+                .withArgs(provider1Address);
 
             const services = await serving.getAllServices();
             expect(services.length).to.equal(1);
