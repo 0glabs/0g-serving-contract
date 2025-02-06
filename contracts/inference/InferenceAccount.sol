@@ -126,8 +126,8 @@ library AccountLibrary {
             }
             account.balance -= refund.amount;
             account.pendingRefund -= refund.amount;
-            delete account.refunds[i];
             totalAmount += refund.amount;
+            delete account.refunds[i];
         }
 
         balance = account.balance;

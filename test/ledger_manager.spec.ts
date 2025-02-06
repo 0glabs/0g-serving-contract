@@ -129,7 +129,7 @@ describe("Ledger manager", () => {
         expect(account.availableBalance).to.equal(BigInt(0));
     });
 
-    describe("Retrieve Fund", () => {
+    describe("Retrieve Fund from fine-tuning sub-account", () => {
         let unlockTime: number;
 
         beforeEach(async () => {
@@ -163,6 +163,44 @@ describe("Ledger manager", () => {
             const ledgerAccount = await ledger.getLedger(ownerAddress);
 
             expect(fineTuningAccount.balance).to.be.equal(BigInt(0));
+            expect(ledgerAccount.availableBalance).to.be.equal(BigInt(ownerInitialLedgerBalance));
+        });
+    });
+
+    describe("Retrieve Fund from inference sub-account", () => {
+        let unlockTime: number;
+
+        beforeEach(async () => {
+            await Promise.all([ledger.transferFund(provider1Address, "inference", ownerInitialInferenceBalance)]);
+
+            const res = await ledger.retrieveFund([provider1Address], "inference");
+            const receipt = await res.wait();
+
+            const block = await ethers.provider.getBlock((receipt as TransactionReceipt).blockNumber);
+            unlockTime = (block as Block).timestamp + lockTime;
+        });
+
+        it("should not receive fund if the unlockTime hasn't arrived and called ", async () => {
+            await time.increaseTo(unlockTime - 1);
+
+            await ledger.retrieveFund([provider1Address], "inference");
+            const inferenceAccount = await inferenceServing.getAccount(ownerAddress, provider1);
+            const ledgerAccount = await ledger.getLedger(ownerAddress);
+
+            expect(inferenceAccount.balance).to.be.equal(BigInt(ownerInitialInferenceBalance));
+            expect(ledgerAccount.availableBalance).to.be.equal(
+                BigInt(ownerInitialLedgerBalance - ownerInitialInferenceBalance)
+            );
+        });
+
+        it("should receive fund if the unlockTime has arrived and called", async () => {
+            await time.increaseTo(unlockTime + 1);
+
+            await ledger.retrieveFund([provider1Address], "inference");
+            const inferenceAccount = await inferenceServing.getAccount(ownerAddress, provider1);
+            const ledgerAccount = await ledger.getLedger(ownerAddress);
+
+            expect(inferenceAccount.balance).to.be.equal(BigInt(0));
             expect(ledgerAccount.availableBalance).to.be.equal(BigInt(ownerInitialLedgerBalance));
         });
     });
