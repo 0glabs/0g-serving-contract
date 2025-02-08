@@ -86,32 +86,93 @@ describe("Ledger manager", () => {
         expect(account.availableBalance).to.equal(BigInt(ownerInitialLedgerBalance + depositAmount));
     });
 
-    it("should transfer fund to serving contract", async () => {
-        await Promise.all([
-            ledger.transferFund(provider1Address, "fine-tuning", ownerInitialFineTuningBalance),
-            ledger.transferFund(provider1Address, "inference", ownerInitialInferenceBalance),
-            ledger.connect(user1).transferFund(provider1Address, "fine-tuning", user1InitialFineTuningBalance),
-            ledger.connect(user1).transferFund(provider1Address, "inference", user1InitialInferenceBalance),
-        ]);
+    describe("Transfer fund", () => {
+        it("should transfer fund to serving contract", async () => {
+            await Promise.all([
+                ledger.transferFund(provider1Address, "fine-tuning", ownerInitialFineTuningBalance),
+                ledger.transferFund(provider1Address, "inference", ownerInitialInferenceBalance),
+                ledger.connect(user1).transferFund(provider1Address, "fine-tuning", user1InitialFineTuningBalance),
+                ledger.connect(user1).transferFund(provider1Address, "inference", user1InitialInferenceBalance),
+            ]);
 
-        const ledgers = await ledger.getAllLedgers();
-        const userAddresses = (ledgers as LedgerStructOutput[]).map((a) => a.user);
-        const availableBalances = (ledgers as LedgerStructOutput[]).map((a) => a.availableBalance);
-        const inferenceProviders = (ledgers as LedgerStructOutput[]).map((a) => a.inferenceProviders);
-        const fineTuningProviders = (ledgers as LedgerStructOutput[]).map((a) => a.fineTuningProviders);
+            const ledgers = await ledger.getAllLedgers();
+            const userAddresses = (ledgers as LedgerStructOutput[]).map((a) => a.user);
+            const availableBalances = (ledgers as LedgerStructOutput[]).map((a) => a.availableBalance);
+            const inferenceProviders = (ledgers as LedgerStructOutput[]).map((a) => a.inferenceProviders);
+            const fineTuningProviders = (ledgers as LedgerStructOutput[]).map((a) => a.fineTuningProviders);
 
-        expect(userAddresses).to.have.members([ownerAddress, user1Address]);
-        expect(availableBalances).to.have.members([
-            BigInt(ownerInitialLedgerBalance - ownerInitialFineTuningBalance - ownerInitialInferenceBalance),
-            BigInt(user1InitialLedgerBalance - user1InitialFineTuningBalance - user1InitialInferenceBalance),
-        ]);
-        expect(inferenceProviders).to.have.deep.members([[provider1Address], [provider1Address]]);
-        expect(fineTuningProviders).to.have.deep.members([[provider1Address], [provider1Address]]);
+            expect(userAddresses).to.have.members([ownerAddress, user1Address]);
+            expect(availableBalances).to.have.members([
+                BigInt(ownerInitialLedgerBalance - ownerInitialFineTuningBalance - ownerInitialInferenceBalance),
+                BigInt(user1InitialLedgerBalance - user1InitialFineTuningBalance - user1InitialInferenceBalance),
+            ]);
+            expect(inferenceProviders).to.have.deep.members([[provider1Address], [provider1Address]]);
+            expect(fineTuningProviders).to.have.deep.members([[provider1Address], [provider1Address]]);
 
-        const inferenceAccount = await inferenceServing.getAccount(ownerAddress, provider1);
-        const fineTuningAccount = await fineTuningServing.getAccount(ownerAddress, provider1);
-        expect(inferenceAccount.balance).to.equal(BigInt(ownerInitialInferenceBalance));
-        expect(fineTuningAccount.balance).to.equal(BigInt(ownerInitialFineTuningBalance));
+            const inferenceAccount = await inferenceServing.getAccount(ownerAddress, provider1);
+            const fineTuningAccount = await fineTuningServing.getAccount(ownerAddress, provider1);
+            expect(inferenceAccount.balance).to.equal(BigInt(ownerInitialInferenceBalance));
+            expect(fineTuningAccount.balance).to.equal(BigInt(ownerInitialFineTuningBalance));
+        });
+
+        it("should cancel the retrieved fund and transfer the remain fund when transfer fund larger than total retrieved fund", async () => {
+            await Promise.all([
+                ledger.transferFund(provider1Address, "fine-tuning", ownerInitialFineTuningBalance / 2),
+                ledger.transferFund(provider1Address, "inference", ownerInitialInferenceBalance / 2),
+            ]);
+
+            await ledger.retrieveFund([provider1Address], "fine-tuning");
+            await ledger.retrieveFund([provider1Address], "inference");
+
+            let inferenceAccount = await inferenceServing.getAccount(ownerAddress, provider1);
+            let fineTuningAccount = await fineTuningServing.getAccount(ownerAddress, provider1);
+            expect(inferenceAccount.balance).to.equal(BigInt(ownerInitialInferenceBalance / 2));
+            expect(fineTuningAccount.balance).to.equal(BigInt(ownerInitialFineTuningBalance / 2));
+            expect(inferenceAccount.pendingRefund).to.equal(BigInt(ownerInitialInferenceBalance / 2));
+            expect(fineTuningAccount.pendingRefund).to.equal(BigInt(ownerInitialFineTuningBalance / 2));
+
+            await Promise.all([
+                ledger.transferFund(provider1Address, "fine-tuning", ownerInitialFineTuningBalance),
+                ledger.transferFund(provider1Address, "inference", ownerInitialInferenceBalance),
+            ]);
+
+            inferenceAccount = await inferenceServing.getAccount(ownerAddress, provider1);
+            fineTuningAccount = await fineTuningServing.getAccount(ownerAddress, provider1);
+            expect(inferenceAccount.balance).to.equal(BigInt(ownerInitialInferenceBalance));
+            expect(fineTuningAccount.balance).to.equal(BigInt(ownerInitialFineTuningBalance));
+            expect(inferenceAccount.pendingRefund).to.equal(BigInt(0));
+            expect(fineTuningAccount.pendingRefund).to.equal(BigInt(0));
+        });
+
+        it("should cancel the retrieved fund even when transfer fund smaller than total retrieved fund", async () => {
+            await Promise.all([
+                ledger.transferFund(provider1Address, "fine-tuning", ownerInitialFineTuningBalance),
+                ledger.transferFund(provider1Address, "inference", ownerInitialInferenceBalance),
+            ]);
+
+            await ledger.retrieveFund([provider1Address], "fine-tuning");
+            await ledger.retrieveFund([provider1Address], "inference");
+
+            let inferenceAccount = await inferenceServing.getAccount(ownerAddress, provider1);
+            let fineTuningAccount = await fineTuningServing.getAccount(ownerAddress, provider1);
+            expect(inferenceAccount.balance).to.equal(BigInt(ownerInitialInferenceBalance));
+            expect(fineTuningAccount.balance).to.equal(BigInt(ownerInitialFineTuningBalance));
+            expect(inferenceAccount.pendingRefund).to.equal(BigInt(ownerInitialInferenceBalance));
+            expect(fineTuningAccount.pendingRefund).to.equal(BigInt(ownerInitialFineTuningBalance));
+
+            // The transfer fund is smaller than the total retrieved fund, but the pending refund will still be canceled
+            await Promise.all([
+                ledger.transferFund(provider1Address, "fine-tuning", ownerInitialFineTuningBalance / 2),
+                ledger.transferFund(provider1Address, "inference", ownerInitialInferenceBalance / 2),
+            ]);
+
+            inferenceAccount = await inferenceServing.getAccount(ownerAddress, provider1);
+            fineTuningAccount = await fineTuningServing.getAccount(ownerAddress, provider1);
+            expect(inferenceAccount.balance).to.equal(BigInt(ownerInitialInferenceBalance));
+            expect(fineTuningAccount.balance).to.equal(BigInt(ownerInitialFineTuningBalance));
+            expect(inferenceAccount.pendingRefund).to.equal(BigInt(0));
+            expect(fineTuningAccount.pendingRefund).to.equal(BigInt(0));
+        });
     });
 
     it("should refund fund", async () => {

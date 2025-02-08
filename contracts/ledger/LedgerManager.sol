@@ -4,8 +4,7 @@ pragma solidity >=0.8.0 <0.9.0;
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
 import "../utils/Initializable.sol";
-
-import "hardhat/console.sol";
+import "@openzeppelin/contracts/utils/math/Math.sol";
 
 struct Ledger {
     address user;
@@ -24,7 +23,9 @@ interface ILedger {
 interface IServing {
     function accountExists(address user, address provider) external view returns (bool);
 
-    function depositFund(address user, address provider) external payable;
+    function getPendingRefund(address user, address provider) external view returns (uint);
+
+    function depositFund(address user, address provider, uint cancelRetrievingAmount) external payable;
 
     function requestRefundAll(address user, address provider) external;
 
@@ -124,17 +125,28 @@ contract LedgerManager is Ownable, Initializable {
 
     function transferFund(address provider, string memory serviceTypeStr, uint amount) external {
         Ledger storage ledger = _get(msg.sender);
-        require(ledger.availableBalance >= amount, "Insufficient balance");
-
         (address servingAddress, IServing serving, uint serviceType) = _getServiceDetails(serviceTypeStr);
 
-        ledger.availableBalance -= amount;
-
+        uint transferAmount = amount;
         bytes memory payload;
+
         if (serving.accountExists(msg.sender, provider)) {
-            payload = abi.encodeWithSignature("depositFund(address,address)", msg.sender, provider);
+            // If the account already exists, First cancel the amount being retrieved,
+            // and if it is insufficient, then transfer the remaining amount.
+            uint retrievingAmount = serving.getPendingRefund(msg.sender, provider);
+            uint cancelRetrievingAmount = Math.min(amount, retrievingAmount);
+            transferAmount -= cancelRetrievingAmount;
+
+            payload = abi.encodeWithSignature(
+                "depositFund(address,address,uint256)",
+                msg.sender,
+                provider,
+                cancelRetrievingAmount
+            );
         } else {
+            // If the account does not exist, add a new account.
             if (serviceType == 0) {
+                // Handle inference service
                 payload = abi.encodeWithSignature(
                     "addAccount(address,address,uint256[2],string)",
                     msg.sender,
@@ -144,6 +156,7 @@ contract LedgerManager is Ownable, Initializable {
                 );
                 ledger.inferenceProviders.push(provider);
             } else {
+                // Handle fine-tuning service
                 payload = abi.encodeWithSignature(
                     "addAccount(address,address,string)",
                     msg.sender,
@@ -154,7 +167,10 @@ contract LedgerManager is Ownable, Initializable {
             }
         }
 
-        (bool success, ) = servingAddress.call{value: amount}(payload);
+        require(ledger.availableBalance >= transferAmount, "Insufficient balance");
+        ledger.availableBalance -= transferAmount;
+
+        (bool success, ) = servingAddress.call{value: transferAmount}(payload);
         require(success, "Call to child contract failed");
     }
 

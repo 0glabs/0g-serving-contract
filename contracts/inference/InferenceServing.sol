@@ -91,6 +91,10 @@ contract InferenceServing is Ownable, Initializable, IServing {
         return accountMap.accountExists(user, provider);
     }
 
+    function getPendingRefund(address user, address provider) public view returns (uint) {
+        return accountMap.getPendingRefund(user, provider);
+    }
+
     function addAccount(
         address user,
         address provider,
@@ -105,8 +109,8 @@ contract InferenceServing is Ownable, Initializable, IServing {
         accountMap.deleteAccount(user, provider);
     }
 
-    function depositFund(address user, address provider) external payable onlyLedger {
-        (uint balance, uint pendingRefund) = accountMap.depositFund(user, provider, msg.value);
+    function depositFund(address user, address provider, uint cancelRetrievingAmount) external payable onlyLedger {
+        (uint balance, uint pendingRefund) = accountMap.depositFund(user, provider, cancelRetrievingAmount, msg.value);
         emit BalanceUpdated(user, provider, balance, pendingRefund);
     }
 

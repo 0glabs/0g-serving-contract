@@ -66,6 +66,11 @@ library AccountLibrary {
         return _contains(map, _key(user, provider));
     }
 
+    function getPendingRefund(AccountMap storage map, address user, address provider) internal view returns (uint) {
+        Account storage account = _get(map, user, provider);
+        return account.pendingRefund;
+    }
+
     function addAccount(
         AccountMap storage map,
         address user,
@@ -94,6 +99,7 @@ library AccountLibrary {
         AccountMap storage map,
         address user,
         address provider,
+        uint cancelRetrievingAmount,
         uint amount
     ) internal returns (uint, uint) {
         bytes32 key = _key(user, provider);
@@ -101,6 +107,21 @@ library AccountLibrary {
             revert AccountNotExists(user, provider);
         }
         Account storage account = _get(map, user, provider);
+
+        for (uint i = 0; i < account.refunds.length; i++) {
+            Refund storage refund = account.refunds[i];
+            if (refund.processed) {
+                continue;
+            }
+            account.pendingRefund -= refund.amount;
+            if (cancelRetrievingAmount <= refund.amount) {
+                delete account.refunds[i];
+                break;
+            }
+            cancelRetrievingAmount -= refund.amount;
+            delete account.refunds[i];
+        }
+
         account.balance += amount;
         return (account.balance, account.pendingRefund);
     }
