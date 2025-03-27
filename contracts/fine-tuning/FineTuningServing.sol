@@ -36,7 +36,8 @@ contract FineTuningServing is Ownable, Initializable, IServing {
         Quota quota,
         uint pricePerToken,
         address providerSigner,
-        bool occupied
+        bool occupied,
+        uint pricePerHour
     );
     event ServiceRemoved(address indexed user);
     error InvalidVerifierInput(string reason);
@@ -128,10 +129,11 @@ contract FineTuningServing is Ownable, Initializable, IServing {
         Quota memory quota,
         uint pricePerToken,
         address providerSigner,
-        bool occupied
+        bool occupied,
+        uint pricePerHour
     ) external {
-        serviceMap.addOrUpdateService(msg.sender, url, quota, pricePerToken, providerSigner, occupied);
-        emit ServiceUpdated(msg.sender, url, quota, pricePerToken, providerSigner, occupied);
+        serviceMap.addOrUpdateService(msg.sender, url, quota, pricePerToken, providerSigner, occupied, pricePerHour);
+        emit ServiceUpdated(msg.sender, url, quota, pricePerToken, providerSigner, occupied, pricePerHour);
     }
 
     function removeService() external {
@@ -202,5 +204,13 @@ contract FineTuningServing is Ownable, Initializable, IServing {
         ledger.spendFund(account.user, amount);
         emit BalanceUpdated(account.user, msg.sender, account.balance, account.pendingRefund);
         payable(msg.sender).transfer(amount);
+    }
+
+    function settleFailedTaskFees(address user, uint taskFee) external {
+        // TODO: how to proof the task was run
+        Account storage account = accountMap.getAccount(user, msg.sender);
+        uint256 chargeableFee = account.balance < taskFee ? account.balance : taskFee;
+
+        _settleFees(account, chargeableFee);
     }
 }
