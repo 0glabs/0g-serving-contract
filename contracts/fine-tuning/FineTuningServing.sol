@@ -22,6 +22,7 @@ contract FineTuningServing is Ownable, Initializable, IServing {
     using ServiceLibrary for ServiceLibrary.ServiceMap;
     using VerifierLibrary for VerifierInput;
 
+    uint penaltyPercentage;
     uint public lockTime;
     address public ledgerAddress;
     ILedger private ledger;
@@ -42,16 +43,26 @@ contract FineTuningServing is Ownable, Initializable, IServing {
     event ServiceRemoved(address indexed user);
     error InvalidVerifierInput(string reason);
 
-    function initialize(uint _locktime, address _ledgerAddress, address owner) public onlyInitializeOnce {
+    function initialize(
+        uint _locktime,
+        address _ledgerAddress,
+        address owner,
+        uint _penaltyPercentage
+    ) public onlyInitializeOnce {
         _transferOwnership(owner);
         lockTime = _locktime;
         ledgerAddress = _ledgerAddress;
         ledger = ILedger(ledgerAddress);
+        penaltyPercentage = _penaltyPercentage;
     }
 
     modifier onlyLedger() {
         require(msg.sender == ledgerAddress, "Caller is not the ledger contract");
         _;
+    }
+
+    function updatePenaltyPercentage(uint _penaltyPercentage) public onlyOwner {
+        penaltyPercentage = _penaltyPercentage;
     }
 
     function updateLockTime(uint _locktime) public onlyOwner {
@@ -169,9 +180,18 @@ contract FineTuningServing is Ownable, Initializable, IServing {
             revert InvalidVerifierInput("TEE settlement validation failed");
         }
 
-        account.deliverables[verifierInput.index].encryptedSecret = verifierInput.encryptedSecret;
+        uint fee = verifierInput.taskFee;
+        if (verifierInput.encryptedSecret.length != 0) {
+            if (!deliverable.acknowledged) {
+                revert InvalidVerifierInput("deliverable not acknowledged");
+            }
+            account.deliverables[verifierInput.index].encryptedSecret = verifierInput.encryptedSecret;
+        } else {
+            fee = (fee * penaltyPercentage) / 100;
+        }
+
         account.nonce = verifierInput.nonce;
-        _settleFees(account, verifierInput.taskFee);
+        _settleFees(account, fee);
     }
 
     function _settleFees(Account storage account, uint amount) private {
