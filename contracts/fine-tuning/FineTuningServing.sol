@@ -179,12 +179,11 @@ contract FineTuningServing is Ownable, Initializable, IServing {
         }
 
         uint fee = verifierInput.taskFee;
-        if (verifierInput.encryptedSecret.length != 0) {
-            if (!deliverable.acknowledged) {
-                revert InvalidVerifierInput("deliverable not acknowledged");
-            }
+        if (deliverable.acknowledged) {
+            require(verifierInput.encryptedSecret.length != 0, "secret should not be empty");
             account.deliverables[verifierInput.index].encryptedSecret = verifierInput.encryptedSecret;
         } else {
+            require(verifierInput.encryptedSecret.length == 0, "secret should be empty");
             fee = (fee * penaltyPercentage) / 100;
         }
 
