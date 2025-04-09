@@ -27,7 +27,7 @@ contract FineTuningServing is Ownable, Initializable, IServing {
     ILedger private ledger;
     AccountLibrary.AccountMap private accountMap;
     ServiceLibrary.ServiceMap private serviceMap;
-    uint penaltyPercentage;
+    uint public penaltyPercentage;
 
     event BalanceUpdated(address indexed user, address indexed provider, uint amount, uint pendingRefund);
     event RefundRequested(address indexed user, address indexed provider, uint indexed index, uint timestamp);
