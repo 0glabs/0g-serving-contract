@@ -34,6 +34,7 @@ describe("Fine tuning serving", () => {
     const user1InitialLedgerBalance = 2000;
     const user1InitialFineTuningBalance = user1InitialLedgerBalance / 4;
     const lockTime = 24 * 60 * 60;
+    const defaultPenaltyPercentage = 30;
 
     const provider1Quota: QuotaStruct = {
         cpuCount: BigInt(8),
@@ -106,6 +107,14 @@ describe("Fine tuning serving", () => {
             const result = await serving.lockTime();
             expect(result).to.equal(BigInt(updatedLockTime));
         });
+
+        it("should succeed in updating penalty percentage succeed", async () => {
+            const updatedPenaltyPercentage = 60;
+            await expect(serving.connect(owner).updatePenaltyPercentage(updatedPenaltyPercentage)).not.to.be.reverted;
+
+            const result = await serving.penaltyPercentage();
+            expect(result).to.equal(BigInt(updatedPenaltyPercentage));
+        });
     });
 
     describe("User", () => {
@@ -114,6 +123,13 @@ describe("Fine tuning serving", () => {
             await expect(serving.connect(user1).updateLockTime(updatedLockTime)).to.be.reverted;
             const result = await serving.lockTime();
             expect(result).to.equal(BigInt(lockTime));
+        });
+
+        it("should fail to update the penalty percentage if it is not the owner", async () => {
+            const updatedPenaltyPercentage = 60;
+            await expect(serving.connect(user1).updatePenaltyPercentage(updatedPenaltyPercentage)).to.be.reverted;
+            const result = await serving.penaltyPercentage();
+            expect(result).to.equal(BigInt(defaultPenaltyPercentage));
         });
 
         it("should transfer fund and update balance", async () => {
@@ -289,6 +305,53 @@ describe("Fine tuning serving", () => {
             verifierInput.taskFee = ownerInitialFineTuningBalance + 1;
 
             await expect(serving.connect(provider1).settleFees(verifierInput)).to.be.reverted;
+        });
+
+        it("should failed due to no secret", async () => {
+            verifierInput.encryptedSecret = "0x";
+            verifierInput = await backfillVerifierInput(providerPrivateKey, verifierInput);
+            await expect(serving.connect(provider1).settleFees(verifierInput)).to.be.revertedWith(
+                "secret should not be empty"
+            );
+        });
+    });
+
+    describe("Settle not ack fees", () => {
+        const modelRootHash = "0x1234567890abcdef1234567890abcdef12345678";
+        const encryptedSecret = "0x1234567890abcdef1234567890abcdef12345678";
+        const taskFee = 10;
+        let verifierInput: VerifierInputStruct;
+
+        beforeEach(async () => {
+            await serving.acknowledgeProviderSigner(provider1, provider1Signer);
+            await serving.connect(provider1).addDeliverable(ownerAddress, modelRootHash);
+
+            verifierInput = {
+                taskFee,
+                encryptedSecret: "0x",
+                modelRootHash,
+                index: BigInt(0),
+                nonce: BigInt(1),
+                providerSigner: provider1Signer,
+                user: ownerAddress,
+                signature: "",
+            };
+
+            verifierInput = await backfillVerifierInput(providerPrivateKey, verifierInput);
+        });
+
+        it("should succeed", async () => {
+            await expect(serving.connect(provider1).settleFees(verifierInput))
+                .to.emit(serving, "BalanceUpdated")
+                .withArgs(ownerAddress, provider1Address, ownerInitialFineTuningBalance - (taskFee * defaultPenaltyPercentage) / 100, 0);
+        });
+
+        it("should failed due to secret", async () => {
+            verifierInput.encryptedSecret = encryptedSecret;
+            verifierInput = await backfillVerifierInput(providerPrivateKey, verifierInput);
+            await expect(serving.connect(provider1).settleFees(verifierInput)).to.be.revertedWith(
+                "secret should be empty"
+            );
         });
     });
 

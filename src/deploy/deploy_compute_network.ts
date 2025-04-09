@@ -3,6 +3,7 @@ import { HardhatRuntimeEnvironment } from "hardhat/types";
 import { CONTRACTS, getTypedContract } from "../utils/utils";
 
 const lockTime = parseInt(process.env["LOCK_TIME"] || "86400");
+const penaltyPercentage = parseInt(process.env["PENALTY_PERCENTAGE"] || "30");
 
 const deploy: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
     const { deployer } = await hre.getNamedAccounts();
@@ -25,7 +26,7 @@ const deploy: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
 
     console.log(`initializing fine-tuning serving..`);
     if (!(await fineTuningServing.initialized())) {
-        await (await fineTuningServing.initialize(lockTime, ledgerManagerAddress, deployer)).wait();
+        await (await fineTuningServing.initialize(lockTime, ledgerManagerAddress, deployer, penaltyPercentage)).wait();
     }
 
     console.log(`initializing ledger manager..`);
