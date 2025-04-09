@@ -34,6 +34,7 @@ describe("Fine tuning serving", () => {
     const user1InitialLedgerBalance = 2000;
     const user1InitialFineTuningBalance = user1InitialLedgerBalance / 4;
     const lockTime = 24 * 60 * 60;
+    const defaultPenaltyPercentage = 30;
 
     const provider1Quota: QuotaStruct = {
         cpuCount: BigInt(8),
@@ -128,7 +129,7 @@ describe("Fine tuning serving", () => {
             const updatedPenaltyPercentage = 60;
             await expect(serving.connect(user1).updatePenaltyPercentage(updatedPenaltyPercentage)).to.be.reverted;
             const result = await serving.penaltyPercentage();
-            expect(result).to.equal(BigInt(50));
+            expect(result).to.equal(BigInt(defaultPenaltyPercentage));
         });
 
         it("should transfer fund and update balance", async () => {
@@ -342,7 +343,7 @@ describe("Fine tuning serving", () => {
         it("should succeed", async () => {
             await expect(serving.connect(provider1).settleFees(verifierInput))
                 .to.emit(serving, "BalanceUpdated")
-                .withArgs(ownerAddress, provider1Address, ownerInitialFineTuningBalance - (taskFee * 50) / 100, 0);
+                .withArgs(ownerAddress, provider1Address, ownerInitialFineTuningBalance - (taskFee * defaultPenaltyPercentage) / 100, 0);
         });
 
         it("should failed due to secret", async () => {

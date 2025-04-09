@@ -3,7 +3,7 @@ import { HardhatRuntimeEnvironment } from "hardhat/types";
 import { CONTRACTS, getTypedContract } from "../utils/utils";
 
 const lockTime = parseInt(process.env["LOCK_TIME"] || "86400");
-const penaltyPercentage = parseInt(process.env["PENALTY_PERCENTAGE"] || "50");
+const penaltyPercentage = parseInt(process.env["PENALTY_PERCENTAGE"] || "30");
 
 const deploy: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
     const { deployer } = await hre.getNamedAccounts();
