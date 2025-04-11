@@ -10,6 +10,7 @@ struct Service {
     uint pricePerToken;
     address providerSigner;
     bool occupied;
+    string[] models;
 }
 
 struct Quota {
@@ -49,11 +50,12 @@ library ServiceLibrary {
         Quota memory quota,
         uint pricePerToken,
         address providerSigner,
-        bool occupied
+        bool occupied,
+        string[] memory models
     ) internal {
         bytes32 key = _key(provider);
         if (!_contains(map, key)) {
-            _set(map, key, Service(provider, url, quota, pricePerToken, providerSigner, false));
+            _set(map, key, Service(provider, url, quota, pricePerToken, providerSigner, false, models));
             return;
         }
         Service storage value = _get(map, provider);
@@ -62,6 +64,7 @@ library ServiceLibrary {
         value.pricePerToken = pricePerToken;
         value.providerSigner = providerSigner;
         value.occupied = occupied;
+        value.models = models;
     }
 
     function removeService(ServiceMap storage map, address provider) internal {
