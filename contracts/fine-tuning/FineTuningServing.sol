@@ -139,9 +139,10 @@ contract FineTuningServing is Ownable, Initializable, IServing {
         Quota memory quota,
         uint pricePerToken,
         address providerSigner,
-        bool occupied
+        bool occupied,
+        string[] memory models
     ) external {
-        serviceMap.addOrUpdateService(msg.sender, url, quota, pricePerToken, providerSigner, occupied);
+        serviceMap.addOrUpdateService(msg.sender, url, quota, pricePerToken, providerSigner, occupied, models);
         emit ServiceUpdated(msg.sender, url, quota, pricePerToken, providerSigner, occupied);
     }
 
