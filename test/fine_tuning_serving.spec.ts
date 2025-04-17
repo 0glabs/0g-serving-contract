@@ -92,10 +92,10 @@ describe("Fine tuning serving", () => {
 
             serving
                 .connect(provider1)
-                .addOrUpdateService(provider1Url, provider1Quota, provider1PricePerToken, provider1Signer, false),
+                .addOrUpdateService(provider1Url, provider1Quota, provider1PricePerToken, provider1Signer, false, []),
             serving
                 .connect(provider2)
-                .addOrUpdateService(provider2Url, provider2Quota, provider2PricePerToken, provider2Signer, false),
+                .addOrUpdateService(provider2Url, provider2Quota, provider2PricePerToken, provider2Signer, false, []),
         ]);
     });
 
@@ -217,6 +217,7 @@ describe("Fine tuning serving", () => {
             const modifiedPricePerToken = 200;
             const modifiedProviderSinger = "0xabcdef1234567890abcdef1234567890abcdef12";
             const modifiedOccupied = true;
+            const modifiedModels = ["model"];
 
             await expect(
                 serving
@@ -226,7 +227,8 @@ describe("Fine tuning serving", () => {
                         modifiedQuota,
                         modifiedPricePerToken,
                         modifiedProviderSinger,
-                        modifiedOccupied
+                        modifiedOccupied,
+                        modifiedModels
                     )
             )
                 .to.emit(serving, "ServiceUpdated")
@@ -252,6 +254,10 @@ describe("Fine tuning serving", () => {
             expect(service.pricePerToken).to.equal(modifiedPricePerToken);
             expect(service.providerSigner.toLowerCase()).to.equal(modifiedProviderSinger);
             expect(service.occupied).to.equal(modifiedOccupied);
+            expect(service.models.length).to.equal(modifiedModels.length);
+            for (const index in modifiedModels) {
+                expect(service.models[index]).to.equal(modifiedModels[index]);
+            }
         });
 
         it("should remove service correctly", async function () {
@@ -343,7 +349,12 @@ describe("Fine tuning serving", () => {
         it("should succeed", async () => {
             await expect(serving.connect(provider1).settleFees(verifierInput))
                 .to.emit(serving, "BalanceUpdated")
-                .withArgs(ownerAddress, provider1Address, ownerInitialFineTuningBalance - (taskFee * defaultPenaltyPercentage) / 100, 0);
+                .withArgs(
+                    ownerAddress,
+                    provider1Address,
+                    ownerInitialFineTuningBalance - (taskFee * defaultPenaltyPercentage) / 100,
+                    0
+                );
         });
 
         it("should failed due to secret", async () => {
