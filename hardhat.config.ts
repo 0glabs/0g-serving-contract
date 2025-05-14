@@ -7,7 +7,6 @@ import "hardhat-gas-reporter";
 import { HardhatUserConfig } from "hardhat/config";
 dotenv.config();
 
-const ZG_TESTNET_PRIVATE_KEY = process.env.PRIVATE_KEY || "";
 const ZG_TESTNET_V3_PRIVATE_KEY = process.env.ZG_TESTNET_V3_PRIVATE_KEY || "";
 
 import "./src/tasks/upgrade";
@@ -77,7 +76,7 @@ const config: HardhatUserConfig = {
         zgTestnetV3: {
             url: "https://evmrpc-testnet.0g.ai",
             accounts: [ZG_TESTNET_V3_PRIVATE_KEY],
-            chainId: 80087,
+            chainId: 16601,
             gasPrice: 12000000000,
         },
     },
