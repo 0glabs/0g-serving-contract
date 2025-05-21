@@ -1,5 +1,6 @@
 import { FACTORY_POSTFIX } from "@typechain/ethers-v6/dist/common";
 import { HardhatRuntimeEnvironment } from "hardhat/types";
+import { buildPedersenHash } from "circomlibjs";
 
 // We use the Typechain factory class objects to fill the `CONTRACTS` mapping. These objects are used
 // by hardhat-deploy to locate compiled contract artifacts. However, an exception occurs if we import
@@ -42,6 +43,8 @@ class ContractMeta<T> {
 
 export const DEFAULT_ADMIN_ROLE = "0x0000000000000000000000000000000000000000000000000000000000000000";
 export const PAUSER_ROLE = ethers.id("PAUSER_ROLE");
+const ADDR_LENGTH = 20;
+const NONCE_LENGTH = 8;
 
 export const CONTRACTS = {
     LedgerManager: new ContractMeta(Factories.LedgerManager__factory),
@@ -142,4 +145,36 @@ export function validateError(e: unknown, msg: string) {
     } else {
         throw Error(`unexpected error: ${String(e)}`);
     }
+}
+
+function bigintToBytes(input: bigint, l: number) {
+    const bytes = new Uint8Array(l);
+    for (let i = 0; i < l; i++) {
+        bytes[i] = Number((input >> BigInt(8 * i)) & BigInt(0xff));
+    }
+    return bytes;
+}
+
+export async function calculatePedersenHash(nonce: bigint, userAddress: bigint, providerAddress: bigint): Promise<Uint8Array> {
+    const pedersenHash = await buildPedersenHash();
+
+    const buffer = new ArrayBuffer(NONCE_LENGTH + ADDR_LENGTH * 2);
+    let offset = 0;
+
+    // nonce (u64)
+    const nonceBytes = bigintToBytes(nonce, NONCE_LENGTH);
+    new Uint8Array(buffer, offset, NONCE_LENGTH).set(nonceBytes);
+    offset += NONCE_LENGTH;
+
+    // userAddress (u160)
+    const userAddressBytes = bigintToBytes(userAddress, ADDR_LENGTH);
+    new Uint8Array(buffer, offset, ADDR_LENGTH).set(userAddressBytes);
+    offset += ADDR_LENGTH;
+
+    // providerAddress (u160)
+    const providerAddressBytes = bigintToBytes(providerAddress, ADDR_LENGTH);
+    new Uint8Array(buffer, offset, ADDR_LENGTH).set(providerAddressBytes);
+
+    const hash = pedersenHash.hash(Buffer.from(buffer));
+    return hash;
 }
