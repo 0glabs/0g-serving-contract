@@ -87,6 +87,10 @@ contract InferenceServing is Ownable, Initializable, IServing {
         return accountMap.getAllAccounts();
     }
 
+    function acknowledgeProviderSigner(address provider, uint[2] calldata providerPubKey) external {
+        accountMap.acknowledgeProviderSigner(msg.sender, provider, providerPubKey);
+    }
+
     function accountExists(address user, address provider) public view returns (bool) {
         return accountMap.accountExists(user, provider);
     }
@@ -138,24 +142,17 @@ contract InferenceServing is Ownable, Initializable, IServing {
         services = serviceMap.getAllServices();
     }
 
-    function addOrUpdateService(
-        string memory serviceType,
-        string calldata url,
-        string calldata model,
-        string calldata verifiability,
-        uint inputPrice,
-        uint outputPrice
-    ) external {
-        serviceMap.addOrUpdateService(msg.sender, serviceType, url, model, verifiability, inputPrice, outputPrice);
+    function addOrUpdateService(ServiceParams calldata params) external {
+        serviceMap.addOrUpdateService(msg.sender, params);
         emit ServiceUpdated(
             msg.sender,
-            serviceType,
-            url,
-            inputPrice,
-            outputPrice,
+            params.serviceType,
+            params.url,
+            params.inputPrice,
+            params.outputPrice,
             block.timestamp,
-            model,
-            verifiability
+            params.model,
+            params.verifiability
         );
     }
 
@@ -190,15 +187,19 @@ contract InferenceServing is Ownable, Initializable, IServing {
             if (account.signer[0] != inputs[start + 5] || account.signer[1] != inputs[start + 6]) {
                 revert InvalidProofInputs("signer key is incorrect");
             }
+            if (account.providerPubKey[0] != inputs[start + 7] || account.providerPubKey[1] != inputs[start + 8]) {
+                revert InvalidProofInputs("provider signer key is incorrect");
+            }
+
             if (account.nonce > firstRequestNonce) {
                 revert InvalidProofInputs("initial nonce is incorrect");
             }
-            for (uint chunkIdx = start; chunkIdx < end; chunkIdx += 7) {
+            for (uint chunkIdx = start; chunkIdx < end; chunkIdx += 9) {
                 uint userAddress = inputs[chunkIdx];
                 uint providerAddress = inputs[chunkIdx + 1];
                 lastRequestNonce = inputs[chunkIdx + 3];
                 uint cost = inputs[chunkIdx + 4];
-                uint nextChunkFirstRequestNonce = chunkIdx + 9 < end ? inputs[chunkIdx + 9] : 0;
+                uint nextChunkFirstRequestNonce = chunkIdx + 11 < end ? inputs[chunkIdx + 11] : 0;
 
                 if (nextChunkFirstRequestNonce != 0 && lastRequestNonce >= nextChunkFirstRequestNonce) {
                     revert InvalidProofInputs("nonce overlapped");

@@ -12,6 +12,7 @@ import {
     insufficientBalanceInProof,
     insufficientBalanceProofInputs,
     publicKey,
+    resPublicKey,
     succeedFee,
     succeedInProof,
     succeedProofInputs,
@@ -87,26 +88,24 @@ describe("Inference Serving", () => {
             ledger.transferFund(provider1Address, "inference", ownerInitialInferenceBalance),
             ledger.connect(user1).transferFund(provider1Address, "inference", user1InitialInferenceBalance),
 
-            serving
-                .connect(provider1)
-                .addOrUpdateService(
-                    provider1ServiceType,
-                    provider1Url,
-                    provider1Model,
-                    provider1Verifiability,
-                    provider1InputPrice,
-                    provider1OutputPrice
-                ),
-            serving
-                .connect(provider2)
-                .addOrUpdateService(
-                    provider2ServiceType,
-                    provider2Url,
-                    provider2Model,
-                    provider2Verifiability,
-                    provider2InputPrice,
-                    provider2OutputPrice
-                ),
+            serving.connect(provider1).addOrUpdateService({
+                serviceType: provider1ServiceType,
+                url: provider1Url,
+                model: provider1Model,
+                verifiability: provider1Verifiability,
+                inputPrice: provider1InputPrice,
+                outputPrice: provider1OutputPrice,
+                additionalInfo: "",
+            }),
+            serving.connect(provider2).addOrUpdateService({
+                serviceType: provider2ServiceType,
+                url: provider2Url,
+                model: provider2Model,
+                verifiability: provider2Verifiability,
+                inputPrice: provider2InputPrice,
+                outputPrice: provider2OutputPrice,
+                additionalInfo: "",
+            }),
         ]);
     });
 
@@ -215,16 +214,15 @@ describe("Inference Serving", () => {
             const modifiedOutputPrice = 300;
 
             await expect(
-                serving
-                    .connect(provider1)
-                    .addOrUpdateService(
-                        modifiedServiceType,
-                        modifiedPriceUrl,
-                        modifiedModel,
-                        modifiedVerifiability,
-                        modifiedInputPrice,
-                        modifiedOutputPrice
-                    )
+                serving.connect(provider1).addOrUpdateService({
+                    serviceType: modifiedServiceType,
+                    url: modifiedPriceUrl,
+                    model: modifiedModel,
+                    verifiability: modifiedVerifiability,
+                    inputPrice: modifiedInputPrice,
+                    outputPrice: modifiedOutputPrice,
+                    additionalInfo: "",
+                })
             )
                 .to.emit(serving, "ServiceUpdated")
                 .withArgs(
@@ -261,11 +259,14 @@ describe("Inference Serving", () => {
 
     describe("Settle fees", () => {
         it("should succeed", async () => {
+            serving.connect(owner).acknowledgeProviderSigner(provider1Address, resPublicKey);
+            serving.connect(user1).acknowledgeProviderSigner(provider1Address, resPublicKey);
+
             const verifierInput: VerifierInputStruct = {
                 inProof: succeedInProof,
                 proofInputs: succeedProofInputs,
                 numChunks: BigInt(2),
-                segmentSize: [BigInt(7), BigInt(7)],
+                segmentSize: [BigInt(9), BigInt(9)],
             };
 
             await expect(serving.connect(provider1).settleFees(verifierInput))

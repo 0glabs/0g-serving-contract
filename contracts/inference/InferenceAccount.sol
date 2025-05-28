@@ -12,6 +12,7 @@ struct Account {
     uint[2] signer;
     Refund[] refunds;
     string additionalInfo;
+    uint[2] providerPubKey;
 }
 
 struct Refund {
@@ -85,6 +86,19 @@ library AccountLibrary {
         }
         map._keys.remove(key);
         delete map._values[key];
+    }
+
+    function acknowledgeProviderSigner(
+        AccountMap storage map,
+        address user,
+        address provider,
+        uint[2] calldata providerPubKey
+    ) internal {
+        if (!_contains(map, _key(user, provider))) {
+            revert AccountNotExists(user, provider);
+        }
+        Account storage account = _get(map, user, provider);
+        account.providerPubKey = providerPubKey;
     }
 
     function depositFund(
