@@ -35,7 +35,7 @@ import { calculatePedersenHash } from "../utils";
 const host = "http://localhost:3000";
 
 // requestLength defined in the circuit of prover
-const requestLength = 4;
+const requestLength = 40;
 
 interface Request {
     nonce: string;
@@ -83,6 +83,7 @@ const generateSignatures = async (requests: Request[], privKey: string[], signRe
         body: JSON.stringify({ requests, privKey, signResponse }, (_, val) => toJSONable(val)),
     });
     const data = await response.json();
+
     return data.signatures;
 };
 
@@ -95,7 +96,7 @@ const generateCalldata = async (
     resSignatures: string[][] = []
 ): Promise<CallData> => {
     const proofInput = { requests, l, reqPubkey, reqSignatures, resPubkey, resSignatures };
-    const calldataResponse = await fetch(host + "/solidity-calldata-combined", {
+    const calldataResponse = await fetch(host + "/solidity-calldata-combined?backend=rust", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(proofInput, (_, val) => toJSONable(val)),
@@ -141,12 +142,13 @@ const generateSucceed = async (reqPrivkey: string[], reqPubkey: string[], resPri
             resFee: "0",
         },
     ];
-    const ownerSignatures = await generateSignatures(ownerRequests, reqPrivkey, false);
-    const providerSignatures = await generateSignatures(ownerRequests, resPrivkey, true);
-    const ownerCalldata = await generateCalldata(ownerRequests, requestLength, reqPubkey, ownerSignatures, resPubkey, providerSignatures);
-    const user1Signatures = await generateSignatures(user1Requests, reqPrivkey, false);
-    const provider1Signatures = await generateSignatures(user1Requests, resPrivkey, true);
-    const user1Calldata = await generateCalldata(user1Requests, requestLength, reqPubkey, user1Signatures, resPubkey, provider1Signatures);
+    const ownerReqSignatures = await generateSignatures(ownerRequests, reqPrivkey, false);
+    const ownerResSignatures = await generateSignatures(ownerRequests, resPrivkey, true);
+    console.log("ownerReqSignatures", ownerReqSignatures);
+    const ownerCalldata = await generateCalldata(ownerRequests, requestLength, reqPubkey, ownerReqSignatures, resPubkey, ownerResSignatures);
+    const user1ReqSignatures = await generateSignatures(user1Requests, reqPrivkey, false);
+    const user1ResSignatures = await generateSignatures(user1Requests, resPrivkey, true);
+    const user1Calldata = await generateCalldata(user1Requests, requestLength, reqPubkey, user1ReqSignatures, resPubkey, user1ResSignatures);
 
     const inProof = flattenArray([
         ownerCalldata.pA,
@@ -223,12 +225,12 @@ const generateDoubleSpending = async (reqPrivkey: string[], reqPubkey: string[],
             resFee: "10",
         },
     ];
-    const initSignatures = await generateSignatures(initRequests, reqPrivkey, false);
-    const initSignaturesProvider = await generateSignatures(initRequests, resPrivkey, true);
-    const initCalldata = await generateCalldata(initRequests, requestLength, reqPubkey, initSignatures, resPubkey, initSignaturesProvider);
-    const overlappedSignatures = await generateSignatures(overlappedRequests, reqPrivkey, false);
-    const overlappedSignaturesProvider = await generateSignatures(overlappedRequests, resPrivkey, true);
-    const overlappedCalldata = await generateCalldata(overlappedRequests, requestLength, reqPubkey, overlappedSignatures, resPubkey, overlappedSignaturesProvider);
+    const initReqSignatures = await generateSignatures(initRequests, reqPrivkey, false);
+    const initResSignatures = await generateSignatures(initRequests, resPrivkey, true);
+    const initCalldata = await generateCalldata(initRequests, requestLength, reqPubkey, initReqSignatures, resPubkey, initResSignatures);
+    const overlappedReqSignatures = await generateSignatures(overlappedRequests, reqPrivkey, false);
+    const overlappedResSignatures = await generateSignatures(overlappedRequests, resPrivkey, true);
+    const overlappedCalldata = await generateCalldata(overlappedRequests, requestLength, reqPubkey, overlappedReqSignatures, resPubkey, overlappedResSignatures);
 
     const inProof = flattenArray([
         initCalldata.pA,
@@ -284,9 +286,9 @@ const generateInsufficientBalance = async (reqPrivkey: string[], reqPubkey: stri
         },
     ];
 
-    const signatures = await generateSignatures(requests, reqPrivkey, false);
-    const signaturesProvider = await generateSignatures(requests, resPrivkey, true);
-    const calldata = await generateCalldata(requests, requestLength, reqPubkey, signatures, resPubkey, signaturesProvider);
+    const reqSignatures = await generateSignatures(requests, reqPrivkey, false);
+    const resSignatures = await generateSignatures(requests, resPrivkey, true);
+    const calldata = await generateCalldata(requests, requestLength, reqPubkey, reqSignatures, resPubkey, resSignatures);
 
     const inProof = flattenArray([calldata.pA, calldata.pB, calldata.pC])
         .map((item) => `    BigInt(\`${item}\`),`)
