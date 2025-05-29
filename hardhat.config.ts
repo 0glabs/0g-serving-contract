@@ -80,6 +80,21 @@ const config: HardhatUserConfig = {
             gasPrice: 12000000000,
         },
     },
+    etherscan: {
+        apiKey: {
+            zgTestnetV3: "00",
+        },
+        customChains: [
+            {
+                network: "zgTestnetV3",
+                chainId: 16601,
+                urls: {
+                    apiURL: "https://chainscan-galileo.0g.ai/open/api",
+                    browserURL: "https://chainscan-galileo.0g.ai",
+                },
+            },
+        ],
+    },
     gasReporter: {
         currency: "Gwei",
         gasPrice: 10,
