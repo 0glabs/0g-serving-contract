@@ -222,7 +222,6 @@ contract LedgerManager is Ownable, Initializable {
         require((ledger.totalBalance - ledger.availableBalance) >= amount, "Insufficient balance");
 
         ledger.totalBalance -= amount;
-        ledger.availableBalance -= amount;
     }
 
     function _at(uint index) internal view returns (Ledger storage) {
