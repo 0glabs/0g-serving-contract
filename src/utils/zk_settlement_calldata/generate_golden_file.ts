@@ -113,7 +113,7 @@ const generateSucceed = async (reqPrivkey: string[], reqPubkey: string[], resPri
             userAddress: "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
             providerAddress: "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC",
             requestHash: await calculatePedersenHash(BigInt("17326143486140001"), BigInt("0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266"), BigInt("0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC")),
-            resFee: "0",
+            resFee: "20",
         },
         {
             nonce: "17326143486140002",
@@ -121,7 +121,7 @@ const generateSucceed = async (reqPrivkey: string[], reqPubkey: string[], resPri
             userAddress: "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
             providerAddress: "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC",
             requestHash: await calculatePedersenHash(BigInt("17326143486140002"), BigInt("0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266"), BigInt("0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC")),
-            resFee: "0",
+            resFee: "20",
         },
     ];
     const user1Requests: Request[] = [
@@ -131,7 +131,7 @@ const generateSucceed = async (reqPrivkey: string[], reqPubkey: string[], resPri
             userAddress: "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
             providerAddress: "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC",
             requestHash: await calculatePedersenHash(BigInt("17326143486140001"), BigInt("0x70997970C51812dc3A010C7d01b50e0d17dc79C8"), BigInt("0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC")),
-            resFee: "0",
+            resFee: "20",
         },
         {
             nonce: "17326143486140002",
@@ -139,7 +139,7 @@ const generateSucceed = async (reqPrivkey: string[], reqPubkey: string[], resPri
             userAddress: "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
             providerAddress: "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC",
             requestHash: await calculatePedersenHash(BigInt("17326143486140002"), BigInt("0x70997970C51812dc3A010C7d01b50e0d17dc79C8"), BigInt("0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC")),
-            resFee: "0",
+            resFee: "20",
         },
     ];
     const ownerReqSignatures = await generateSignatures(ownerRequests, reqPrivkey, false);
@@ -180,9 +180,9 @@ ${proofInputs}
 ];
 
 /**
- * The fee is calculated by summing all fees in the requests: 10 + 10 = 20
+ * The fee is calculated by summing all fees in the requests: 10 + 10 + 20 + 20 = 60
  */
-export const succeedFee = 20;
+export const succeedFee = 60;
 `;
 
     return fileContent;
