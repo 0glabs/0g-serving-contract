@@ -3,6 +3,16 @@ pragma solidity >=0.8.0 <0.9.0;
 
 import "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
 
+struct ServiceParams {
+    string serviceType;
+    string url;
+    string model;
+    string verifiability;
+    uint inputPrice;
+    uint outputPrice;
+    string additionalInfo;
+}
+
 struct Service {
     address provider;
     string serviceType;
@@ -12,6 +22,7 @@ struct Service {
     uint updatedAt;
     string model;
     string verifiability;
+    string additionalInfo;
 }
 
 library ServiceLibrary {
@@ -36,33 +47,35 @@ library ServiceLibrary {
         }
     }
 
-    function addOrUpdateService(
-        ServiceMap storage map,
-        address provider,
-        string memory serviceType,
-        string memory url,
-        string memory model,
-        string memory verifiability,
-        uint inputPrice,
-        uint outputPrice
-    ) internal {
+    function addOrUpdateService(ServiceMap storage map, address provider, ServiceParams calldata params) internal {
         bytes32 key = _key(provider);
         if (!_contains(map, key)) {
             _set(
                 map,
                 key,
-                Service(provider, serviceType, url, inputPrice, outputPrice, block.timestamp, model, verifiability)
+                Service(
+                    provider,
+                    params.serviceType,
+                    params.url,
+                    params.inputPrice,
+                    params.outputPrice,
+                    block.timestamp,
+                    params.model,
+                    params.verifiability,
+                    params.additionalInfo
+                )
             );
             return;
         }
         Service storage value = _get(map, provider);
-        value.serviceType = serviceType;
-        value.inputPrice = inputPrice;
-        value.outputPrice = outputPrice;
-        value.url = url;
+        value.serviceType = params.serviceType;
+        value.inputPrice = params.inputPrice;
+        value.outputPrice = params.outputPrice;
+        value.url = params.url;
         value.updatedAt = block.timestamp;
-        value.model = model;
-        value.verifiability = verifiability;
+        value.model = params.model;
+        value.verifiability = params.verifiability;
+        value.additionalInfo = params.additionalInfo;
     }
 
     function removeService(ServiceMap storage map, address provider) internal {

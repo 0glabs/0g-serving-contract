@@ -30,6 +30,7 @@
 import { writeFileSync } from "fs";
 import fetch from "node-fetch";
 import { join } from "path";
+import { calculatePedersenHash } from "../utils";
 
 const host = "http://localhost:3000";
 
@@ -38,9 +39,11 @@ const requestLength = 40;
 
 interface Request {
     nonce: string;
-    fee: string;
+    reqFee: string;
     userAddress: string;
     providerAddress: string;
+    requestHash: Uint8Array;
+    resFee: string;
 }
 
 interface KeyPair {
@@ -69,65 +72,83 @@ const generateKeyPair = async (): Promise<KeyPair> => {
     return data;
 };
 
-const generateSignatures = async (requests: Request[], privkey: string[]): Promise<string[][]> => {
+function toJSONable(value: unknown) {
+    return value instanceof Uint8Array ? Array.from(value) : value;
+}
+
+const generateSignatures = async (requests: Request[], privKey: string[], signResponse: boolean): Promise<string[][]> => {
     const response = await fetch(host + "/signature", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ requests, privkey }),
+        body: JSON.stringify({ requests, privKey, signResponse }, (_, val) => toJSONable(val)),
     });
     const data = await response.json();
+
     return data.signatures;
 };
 
 const generateCalldata = async (
     requests: Request[],
     l: number,
-    pubkey: string[],
-    signatures: string[][]
+    reqPubkey: string[],
+    reqSignatures: string[][],
+    resPubkey: string[] = [],
+    resSignatures: string[][] = []
 ): Promise<CallData> => {
-    const proofInput = { requests, l, pubkey, signatures };
+    const proofInput = { requests, l, reqPubkey, reqSignatures, resPubkey, resSignatures };
     const calldataResponse = await fetch(host + "/solidity-calldata-combined?backend=rust", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(proofInput),
+        body: JSON.stringify(proofInput, (_, val) => toJSONable(val)),
     });
     const calldataData = await calldataResponse.json();
     return calldataData;
 };
 
-const generateSucceed = async (privkey: string[], pubkey: string[]): Promise<string> => {
+const generateSucceed = async (reqPrivkey: string[], reqPubkey: string[], resPrivkey: string[], resPubkey: string[]): Promise<string> => {
     const ownerRequests: Request[] = [
         {
             nonce: "17326143486140001",
-            fee: "10",
+            reqFee: "10",
             userAddress: "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
             providerAddress: "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC",
+            requestHash: await calculatePedersenHash(BigInt("17326143486140001"), BigInt("0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266"), BigInt("0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC")),
+            resFee: "20",
         },
         {
             nonce: "17326143486140002",
-            fee: "10",
+            reqFee: "10",
             userAddress: "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
             providerAddress: "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC",
+            requestHash: await calculatePedersenHash(BigInt("17326143486140002"), BigInt("0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266"), BigInt("0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC")),
+            resFee: "20",
         },
     ];
     const user1Requests: Request[] = [
         {
             nonce: "17326143486140001",
-            fee: "10",
+            reqFee: "10",
             userAddress: "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
             providerAddress: "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC",
+            requestHash: await calculatePedersenHash(BigInt("17326143486140001"), BigInt("0x70997970C51812dc3A010C7d01b50e0d17dc79C8"), BigInt("0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC")),
+            resFee: "20",
         },
         {
             nonce: "17326143486140002",
-            fee: "10",
+            reqFee: "10",
             userAddress: "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
             providerAddress: "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC",
+            requestHash: await calculatePedersenHash(BigInt("17326143486140002"), BigInt("0x70997970C51812dc3A010C7d01b50e0d17dc79C8"), BigInt("0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC")),
+            resFee: "20",
         },
     ];
-    const ownerSignatures = await generateSignatures(ownerRequests, privkey);
-    const ownerCalldata = await generateCalldata(ownerRequests, requestLength, pubkey, ownerSignatures);
-    const user1Signatures = await generateSignatures(user1Requests, privkey);
-    const user1Calldata = await generateCalldata(user1Requests, requestLength, pubkey, user1Signatures);
+    const ownerReqSignatures = await generateSignatures(ownerRequests, reqPrivkey, false);
+    const ownerResSignatures = await generateSignatures(ownerRequests, resPrivkey, true);
+    console.log("ownerReqSignatures", ownerReqSignatures);
+    const ownerCalldata = await generateCalldata(ownerRequests, requestLength, reqPubkey, ownerReqSignatures, resPubkey, ownerResSignatures);
+    const user1ReqSignatures = await generateSignatures(user1Requests, reqPrivkey, false);
+    const user1ResSignatures = await generateSignatures(user1Requests, resPrivkey, true);
+    const user1Calldata = await generateCalldata(user1Requests, requestLength, reqPubkey, user1ReqSignatures, resPubkey, user1ResSignatures);
 
     const inProof = flattenArray([
         ownerCalldata.pA,
@@ -159,47 +180,57 @@ ${proofInputs}
 ];
 
 /**
- * The fee is calculated by summing all fees in the requests: 10 + 10 = 20
+ * The fee is calculated by summing all fees in the requests: 10 + 10 + 20 + 20 = 60
  */
-export const succeedFee = 20;
+export const succeedFee = 60;
 `;
 
     return fileContent;
 };
 
-const generateDoubleSpending = async (privkey: string[], pubkey: string[]): Promise<string> => {
+const generateDoubleSpending = async (reqPrivkey: string[], reqPubkey: string[], resPrivkey: string[], resPubkey: string[]): Promise<string> => {
     const initRequests: Request[] = [
         {
             nonce: "17326143486140001",
-            fee: "10",
+            reqFee: "10",
             userAddress: "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
             providerAddress: "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC",
+            requestHash: await calculatePedersenHash(BigInt("17326143486140001"), BigInt("0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266"), BigInt("0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC")),
+            resFee: "10",
         },
         {
             nonce: "17326143486140002",
-            fee: "10",
+            reqFee: "10",
             userAddress: "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
             providerAddress: "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC",
+            requestHash: await calculatePedersenHash(BigInt("17326143486140002"), BigInt("0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266"), BigInt("0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC")),
+            resFee: "10",
         },
     ];
     const overlappedRequests: Request[] = [
         {
             nonce: "17326143486140039",
-            fee: "10",
+            reqFee: "10",
             userAddress: "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
             providerAddress: "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC",
+            requestHash: await calculatePedersenHash(BigInt("17326143486140039"), BigInt("0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266"), BigInt("0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC")),
+            resFee: "10",
         },
         {
             nonce: "17326143486140040",
-            fee: "10",
+            reqFee: "10",
             userAddress: "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
             providerAddress: "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC",
+            requestHash: await calculatePedersenHash(BigInt("17326143486140040"), BigInt("0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266"), BigInt("0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC")),
+            resFee: "10",
         },
     ];
-    const initSignatures = await generateSignatures(initRequests, privkey);
-    const initCalldata = await generateCalldata(initRequests, requestLength, pubkey, initSignatures);
-    const overlappedSignatures = await generateSignatures(overlappedRequests, privkey);
-    const overlappedCalldata = await generateCalldata(overlappedRequests, requestLength, pubkey, overlappedSignatures);
+    const initReqSignatures = await generateSignatures(initRequests, reqPrivkey, false);
+    const initResSignatures = await generateSignatures(initRequests, resPrivkey, true);
+    const initCalldata = await generateCalldata(initRequests, requestLength, reqPubkey, initReqSignatures, resPubkey, initResSignatures);
+    const overlappedReqSignatures = await generateSignatures(overlappedRequests, reqPrivkey, false);
+    const overlappedResSignatures = await generateSignatures(overlappedRequests, resPrivkey, true);
+    const overlappedCalldata = await generateCalldata(overlappedRequests, requestLength, reqPubkey, overlappedReqSignatures, resPubkey, overlappedResSignatures);
 
     const inProof = flattenArray([
         initCalldata.pA,
@@ -235,24 +266,29 @@ ${proofInputs}
     return fileContent;
 };
 
-const generateInsufficientBalance = async (privkey: string[], pubkey: string[]): Promise<string> => {
+const generateInsufficientBalance = async (reqPrivkey: string[], reqPubkey: string[], resPrivkey: string[], resPubkey: string[]): Promise<string> => {
     const requests: Request[] = [
         {
             nonce: "17326143486140001",
-            fee: "600",
+            reqFee: "600",
             userAddress: "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
             providerAddress: "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC",
+            requestHash: await calculatePedersenHash(BigInt("17326143486140001"), BigInt("0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266"), BigInt("0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC")),
+            resFee: "0",
         },
         {
             nonce: "17326143486140002",
-            fee: "600",
+            reqFee: "600",
             userAddress: "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
             providerAddress: "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC",
+            requestHash: await calculatePedersenHash(BigInt("17326143486140002"), BigInt("0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266"), BigInt("0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC")),
+            resFee: "0",
         },
     ];
 
-    const signatures = await generateSignatures(requests, privkey);
-    const calldata = await generateCalldata(requests, requestLength, pubkey, signatures);
+    const reqSignatures = await generateSignatures(requests, reqPrivkey, false);
+    const resSignatures = await generateSignatures(requests, resPrivkey, true);
+    const calldata = await generateCalldata(requests, requestLength, reqPubkey, reqSignatures, resPubkey, resSignatures);
 
     const inProof = flattenArray([calldata.pA, calldata.pB, calldata.pC])
         .map((item) => `    BigInt(\`${item}\`),`)
@@ -306,20 +342,24 @@ ${pubkeyContent}
 };
 
 const generateGolden = async () => {
-    const { privkey, pubkey } = await generateKeyPair();
-    let fileContent = await generateKeyPairContent(privkey, pubkey);
-    let filePath = join(__dirname, "/golden/key_pair.ts");
+    const reqKey = await generateKeyPair();
+    const resKey = await generateKeyPair();
+    let fileContent = await generateKeyPairContent(reqKey.privkey, reqKey.pubkey);
+    let filePath = join(__dirname, "/golden/key_pair_req.ts");
+    writeFileSync(filePath, fileContent, "utf8");
+    fileContent = await generateKeyPairContent(resKey.privkey, resKey.pubkey);
+    filePath = join(__dirname, "/golden/key_pair_res.ts");
     writeFileSync(filePath, fileContent, "utf8");
 
-    fileContent = await generateSucceed(privkey, pubkey);
+    fileContent = await generateSucceed(reqKey.privkey, reqKey.pubkey, resKey.privkey, resKey.pubkey);
     filePath = join(__dirname, "/golden/succeed.ts");
     writeFileSync(filePath, fileContent, "utf8");
 
-    fileContent = await generateDoubleSpending(privkey, pubkey);
+    fileContent = await generateDoubleSpending(reqKey.privkey, reqKey.pubkey, resKey.privkey, resKey.pubkey);
     filePath = join(__dirname, "/golden/double_spending.ts");
     writeFileSync(filePath, fileContent, "utf8");
 
-    fileContent = await generateInsufficientBalance(privkey, pubkey);
+    fileContent = await generateInsufficientBalance(reqKey.privkey, reqKey.pubkey, resKey.privkey, resKey.pubkey);
     filePath = join(__dirname, "/golden/insufficient_balance.ts");
     writeFileSync(filePath, fileContent, "utf8");
 };
