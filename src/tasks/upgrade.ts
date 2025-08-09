@@ -58,7 +58,17 @@ task("upgrade:forceImportAll", "import contracts").setAction(async (_taskArgs, h
         console.log(`removing tmp network file ${tmpFilePath}..`);
         fs.rmSync(tmpFilePath);
     }
+    
+    // Helper function to add delay
+    const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+    
     for (const name of Array.from(proxied)) {
+        // Add 500ms delay between each contract to avoid RPC rate limits
+        if (Array.from(proxied).indexOf(name) > 0) {
+            console.log(`Waiting 500ms to avoid RPC rate limit...`);
+            await delay(500);
+        }
+        
         const addr = await (await hre.ethers.getContract(`${name}Impl`)).getAddress();
         const factory = await hre.ethers.getContractFactory(name);
         try {

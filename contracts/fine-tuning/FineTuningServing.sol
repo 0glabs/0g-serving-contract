@@ -78,6 +78,30 @@ contract FineTuningServing is Ownable, Initializable, IServing {
         return accountMap.getAllAccounts();
     }
 
+    function getAccountsByProvider(
+        address provider,
+        uint offset, 
+        uint limit
+    ) public view returns (Account[] memory accounts, uint total) {
+        require(limit == 0 || limit <= 50, "Limit too large");
+        return accountMap.getAccountsByProvider(provider, offset, limit);
+    }
+
+    function getAccountsByUser(
+        address user,
+        uint offset, 
+        uint limit
+    ) public view returns (Account[] memory accounts, uint total) {
+        require(limit == 0 || limit <= 50, "Limit too large");
+        return accountMap.getAccountsByUser(user, offset, limit);
+    }
+
+    function getBatchAccountsByUsers(
+        address[] calldata users
+    ) external view returns (Account[] memory accounts) {
+        return accountMap.getBatchAccountsByUsers(users, msg.sender);
+    }
+
     function accountExists(address user, address provider) public view returns (bool) {
         return accountMap.accountExists(user, provider);
     }

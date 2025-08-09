@@ -35,6 +35,8 @@ library AccountLibrary {
     struct AccountMap {
         EnumerableSet.Bytes32Set _keys;
         mapping(bytes32 => Account) _values;
+        mapping(address => EnumerableSet.Bytes32Set) _providerIndex;
+        mapping(address => EnumerableSet.Bytes32Set) _userIndex;
     }
 
     function getAccount(
@@ -48,9 +50,91 @@ library AccountLibrary {
     function getAllAccounts(AccountMap storage map) internal view returns (Account[] memory accounts) {
         uint len = _length(map);
         accounts = new Account[](len);
-
+        
         for (uint i = 0; i < len; i++) {
             accounts[i] = _at(map, i);
+        }
+    }
+
+    function getAccountsByProvider(
+        AccountMap storage map,
+        address provider,
+        uint offset,
+        uint limit
+    ) internal view returns (Account[] memory accounts, uint total) {
+        EnumerableSet.Bytes32Set storage providerKeys = map._providerIndex[provider];
+        total = providerKeys.length();
+        
+        if (offset >= total) {
+            return (new Account[](0), total);
+        }
+        
+        uint end = limit == 0 ? total : offset + limit;
+        if (end > total) {
+            end = total;
+        }
+        
+        uint resultLen = end - offset;
+        accounts = new Account[](resultLen);
+        
+        for (uint i = 0; i < resultLen; i++) {
+            bytes32 key = providerKeys.at(offset + i);
+            accounts[i] = map._values[key];
+        }
+        
+        return (accounts, total);
+    }
+
+    function getAccountsByUser(
+        AccountMap storage map,
+        address user,
+        uint offset,
+        uint limit
+    ) internal view returns (Account[] memory accounts, uint total) {
+        EnumerableSet.Bytes32Set storage userKeys = map._userIndex[user];
+        total = userKeys.length();
+        
+        if (offset >= total) {
+            return (new Account[](0), total);
+        }
+        
+        uint end = limit == 0 ? total : offset + limit;
+        if (end > total) {
+            end = total;
+        }
+        
+        uint resultLen = end - offset;
+        accounts = new Account[](resultLen);
+        
+        for (uint i = 0; i < resultLen; i++) {
+            bytes32 key = userKeys.at(offset + i);
+            accounts[i] = map._values[key];
+        }
+        
+        return (accounts, total);
+    }
+
+    function getAccountCountByProvider(AccountMap storage map, address provider) internal view returns (uint) {
+        return map._providerIndex[provider].length();
+    }
+
+    function getAccountCountByUser(AccountMap storage map, address user) internal view returns (uint) {
+        return map._userIndex[user].length();
+    }
+
+    function getBatchAccountsByUsers(
+        AccountMap storage map,
+        address[] calldata users,
+        address provider
+    ) internal view returns (Account[] memory accounts) {
+        require(users.length <= 500, "Batch size too large (max 500)");
+        accounts = new Account[](users.length);
+        
+        for (uint i = 0; i < users.length; i++) {
+            bytes32 key = _key(users[i], provider);
+            if (_contains(map, key)) {
+                accounts[i] = map._values[key];
+            }
         }
     }
 
@@ -75,7 +159,12 @@ library AccountLibrary {
         if (_contains(map, key)) {
             revert AccountExists(user, provider);
         }
+        
         _set(map, key, user, provider, signer, amount, additionalInfo);
+        
+        map._providerIndex[provider].add(key);
+        map._userIndex[user].add(key);
+        
         return (amount, 0);
     }
 
@@ -84,6 +173,9 @@ library AccountLibrary {
         if (!_contains(map, key)) {
             return;
         }
+        
+        map._providerIndex[provider].remove(key);
+        map._userIndex[user].remove(key);
         map._keys.remove(key);
         delete map._values[key];
     }
@@ -94,9 +186,6 @@ library AccountLibrary {
         address provider,
         uint[2] calldata providerPubKey
     ) internal {
-        if (!_contains(map, _key(user, provider))) {
-            revert AccountNotExists(user, provider);
-        }
         Account storage account = _get(map, user, provider);
         account.providerPubKey = providerPubKey;
     }
@@ -108,24 +197,50 @@ library AccountLibrary {
         uint cancelRetrievingAmount,
         uint amount
     ) internal returns (uint, uint) {
-        bytes32 key = _key(user, provider);
-        if (!_contains(map, key)) {
-            revert AccountNotExists(user, provider);
-        }
         Account storage account = _get(map, user, provider);
 
-        for (uint i = 0; i < account.refunds.length; i++) {
-            Refund storage refund = account.refunds[i];
-            if (refund.processed) {
-                continue;
+        if (cancelRetrievingAmount > 0) {
+            if (account.refunds.length > 0) {
+                Refund[] memory newRefunds = new Refund[](account.refunds.length);
+                uint newCount = 0;
+                uint remainingCancel = cancelRetrievingAmount;
+                uint newPendingRefund = 0;
+
+                for (uint i = 0; i < account.refunds.length; i++) {
+                    Refund storage refund = account.refunds[i];
+                    
+                    if (refund.processed) {
+                        continue;
+                    }
+
+                    if (remainingCancel >= refund.amount) {
+                        remainingCancel -= refund.amount;
+                    } else if (remainingCancel > 0) {
+                        uint remainingAmount = refund.amount - remainingCancel;
+                        newRefunds[newCount] = Refund({
+                            index: newCount,
+                            amount: remainingAmount,
+                            createdAt: refund.createdAt,
+                            processed: false
+                        });
+                        newPendingRefund += remainingAmount;
+                        newCount++;
+                        remainingCancel = 0;
+                    } else {
+                        newRefunds[newCount] = Refund({
+                            index: newCount,
+                            amount: refund.amount,
+                            createdAt: refund.createdAt,
+                            processed: refund.processed
+                        });
+                        newPendingRefund += refund.amount;
+                        newCount++;
+                    }
+                }
+
+                account.pendingRefund = newPendingRefund;
+                _rebuildRefundArray(account, newRefunds, newCount);
             }
-            account.pendingRefund -= refund.amount;
-            if (cancelRetrievingAmount <= refund.amount) {
-                delete account.refunds[i];
-                break;
-            }
-            cancelRetrievingAmount -= refund.amount;
-            delete account.refunds[i];
         }
 
         account.balance += amount;
@@ -149,24 +264,53 @@ library AccountLibrary {
         uint lockTime
     ) internal returns (uint totalAmount, uint balance, uint pendingRefund) {
         Account storage account = _get(map, user, provider);
-        totalAmount = 0;
+        
+        if (account.refunds.length == 0) {
+            totalAmount = 0;
+            pendingRefund = account.pendingRefund;
+        } else {
+            Refund[] memory newRefunds = new Refund[](account.refunds.length);
+            uint newCount = 0;
+            totalAmount = 0;
+            pendingRefund = 0;
 
-        for (uint i = 0; i < account.refunds.length; i++) {
-            Refund storage refund = account.refunds[i];
-            if (refund.processed) {
-                continue;
+            for (uint i = 0; i < account.refunds.length; i++) {
+                Refund storage refund = account.refunds[i];
+                
+                if (refund.processed) {
+                    continue;
+                }
+
+                if (block.timestamp >= refund.createdAt + lockTime) {
+                    totalAmount += refund.amount;
+                } else {
+                    newRefunds[newCount] = Refund({
+                        index: newCount,
+                        amount: refund.amount,
+                        createdAt: refund.createdAt,
+                        processed: false
+                    });
+                    pendingRefund += refund.amount;
+                    newCount++;
+                }
             }
-            if (block.timestamp < refund.createdAt + lockTime) {
-                continue;
-            }
-            account.balance -= refund.amount;
-            account.pendingRefund -= refund.amount;
-            totalAmount += refund.amount;
-            delete account.refunds[i];
+
+            _rebuildRefundArray(account, newRefunds, newCount);
         }
-
+        
+        account.balance -= totalAmount;
+        account.pendingRefund = pendingRefund;
         balance = account.balance;
-        pendingRefund = account.pendingRefund;
+    }
+
+
+
+    function _rebuildRefundArray(Account storage account, Refund[] memory newRefunds, uint count) private {
+        delete account.refunds;
+        
+        for (uint i = 0; i < count; i++) {
+            account.refunds.push(newRefunds[i]);
+        }
     }
 
     function _at(AccountMap storage map, uint index) internal view returns (Account storage) {
@@ -184,11 +328,10 @@ library AccountLibrary {
 
     function _get(AccountMap storage map, address user, address provider) internal view returns (Account storage) {
         bytes32 key = _key(user, provider);
-        Account storage value = map._values[key];
         if (!_contains(map, key)) {
             revert AccountNotExists(user, provider);
         }
-        return value;
+        return map._values[key];
     }
 
     function _set(

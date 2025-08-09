@@ -3,6 +3,7 @@ pragma solidity >=0.8.0 <0.9.0;
 
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
+import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
 import "../utils/Initializable.sol";
 import "@openzeppelin/contracts/utils/math/Math.sol";
 
@@ -37,7 +38,7 @@ interface IServing {
     function deleteAccount(address user, address provider) external;
 }
 
-contract LedgerManager is Ownable, Initializable {
+contract LedgerManager is Ownable, Initializable, ReentrancyGuard {
     using EnumerableSet for EnumerableSet.Bytes32Set;
 
     address payable public inferenceAddress;
@@ -53,6 +54,17 @@ contract LedgerManager is Ownable, Initializable {
     struct LedgerMap {
         EnumerableSet.Bytes32Set _keys;
         mapping(bytes32 => Ledger) _values;
+        // Operation locks to prevent reentrancy
+        mapping(bytes32 => bool) _operationLocks;
+    }
+
+    // Prevent reentrancy on ledger operations
+    modifier withLedgerLock(address user) {
+        bytes32 key = _key(user);
+        require(!ledgerMap._operationLocks[key], "Ledger locked for operation");
+        ledgerMap._operationLocks[key] = true;
+        _;
+        ledgerMap._operationLocks[key] = false;
     }
 
     function initialize(
@@ -87,12 +99,14 @@ contract LedgerManager is Ownable, Initializable {
         for (uint i = 0; i < len; i++) {
             ledgers[i] = _at(i);
         }
+
+        return ledgers;
     }
 
     function addLedger(
         uint[2] calldata inferenceSigner,
         string memory additionalInfo
-    ) external payable returns (uint, uint) {
+    ) external payable withLedgerLock(msg.sender) returns (uint, uint) {
         bytes32 key = _key(msg.sender);
         if (_contains(key)) {
             revert LedgerExists(msg.sender);
@@ -101,18 +115,13 @@ contract LedgerManager is Ownable, Initializable {
         return (msg.value, 0);
     }
 
-    function depositFund() external payable {
-        bytes32 key = _key(msg.sender);
-        if (!_contains(key)) {
-            revert LedgerNotExists(msg.sender);
-        }
+    function depositFund() external payable withLedgerLock(msg.sender) {
         Ledger storage ledger = _get(msg.sender);
-
         ledger.availableBalance += msg.value;
         ledger.totalBalance += msg.value;
     }
 
-    function refund(uint amount) external {
+    function refund(uint amount) external withLedgerLock(msg.sender) {
         Ledger storage ledger = _get(msg.sender);
         if (ledger.availableBalance < amount) {
             revert InsufficientBalance(msg.sender);
@@ -123,7 +132,11 @@ contract LedgerManager is Ownable, Initializable {
         payable(msg.sender).transfer(amount);
     }
 
-    function transferFund(address provider, string memory serviceTypeStr, uint amount) external {
+    function transferFund(
+        address provider,
+        string memory serviceTypeStr,
+        uint amount
+    ) external nonReentrant withLedgerLock(msg.sender) {
         Ledger storage ledger = _get(msg.sender);
         (address servingAddress, IServing serving, uint serviceType) = _getServiceDetails(serviceTypeStr);
 
@@ -154,7 +167,8 @@ contract LedgerManager is Ownable, Initializable {
                     ledger.inferenceSigner,
                     ledger.additionalInfo
                 );
-                ledger.inferenceProviders.push(provider);
+                // Add provider to array if not exists
+                _safeAddProvider(ledger.inferenceProviders, provider);
             } else {
                 // Handle fine-tuning service
                 payload = abi.encodeWithSignature(
@@ -163,7 +177,7 @@ contract LedgerManager is Ownable, Initializable {
                     provider,
                     ledger.additionalInfo
                 );
-                ledger.fineTuningProviders.push(provider);
+                _safeAddProvider(ledger.fineTuningProviders, provider);
             }
         }
 
@@ -174,7 +188,10 @@ contract LedgerManager is Ownable, Initializable {
         require(success, "Call to child contract failed");
     }
 
-    function retrieveFund(address[] memory providers, string memory serviceType) external {
+    function retrieveFund(
+        address[] memory providers,
+        string memory serviceType
+    ) external nonReentrant withLedgerLock(msg.sender) {
         (, IServing serving, ) = _getServiceDetails(serviceType);
 
         Ledger storage ledger = _get(msg.sender);
@@ -188,22 +205,44 @@ contract LedgerManager is Ownable, Initializable {
         ledger.availableBalance += totalAmount;
     }
 
-    function deleteLedger() external {
+    function deleteLedger() external nonReentrant withLedgerLock(msg.sender) {
         bytes32 key = _key(msg.sender);
-        if (!_contains(key)) {
-            revert LedgerNotExists(msg.sender);
-        }
         Ledger storage ledger = _get(msg.sender);
+
+        // Delete all sub-accounts first
         for (uint i = 0; i < ledger.inferenceProviders.length; i++) {
-            inferenceAccount.deleteAccount(msg.sender, ledger.inferenceProviders[i]);
-        }
-        for (uint i = 0; i < ledger.fineTuningProviders.length; i++) {
-            fineTuningAccount.deleteAccount(msg.sender, ledger.fineTuningProviders[i]);
+            try inferenceAccount.deleteAccount(msg.sender, ledger.inferenceProviders[i]) {
+                // Success
+            } catch {
+                // Continue even if sub-account deletion fails
+            }
         }
 
+        for (uint i = 0; i < ledger.fineTuningProviders.length; i++) {
+            try fineTuningAccount.deleteAccount(msg.sender, ledger.fineTuningProviders[i]) {
+                // Success
+            } catch {
+                // Continue
+            }
+        }
+
+        // Delete main account
         ledgerMap._keys.remove(key);
         delete ledgerMap._values[key];
     }
+
+
+    // Add provider to array if not already exists
+    function _safeAddProvider(address[] storage providers, address provider) private {
+        for (uint i = 0; i < providers.length; i++) {
+            if (providers[i] == provider) {
+                return; // Already exists
+            }
+        }
+        providers.push(provider);
+    }
+
+
 
     function _getServiceDetails(string memory serviceType) private view returns (address, IServing, uint) {
         bytes32 serviceTypeHash = keccak256(abi.encodePacked(serviceType));
@@ -239,11 +278,10 @@ contract LedgerManager is Ownable, Initializable {
 
     function _get(address user) internal view returns (Ledger storage) {
         bytes32 key = _key(user);
-        Ledger storage value = ledgerMap._values[key];
         if (!_contains(key)) {
             revert LedgerNotExists(user);
         }
-        return value;
+        return ledgerMap._values[key];
     }
 
     function _set(

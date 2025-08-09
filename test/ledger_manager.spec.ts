@@ -160,7 +160,7 @@ describe("Ledger manager", () => {
             expect(inferenceAccount.pendingRefund).to.equal(BigInt(ownerInitialInferenceBalance));
             expect(fineTuningAccount.pendingRefund).to.equal(BigInt(ownerInitialFineTuningBalance));
 
-            // The transfer fund is smaller than the total retrieved fund, but the pending refund will still be canceled
+            // The transfer fund is smaller than the total retrieved fund, so only part of the pending refund should be canceled
             await Promise.all([
                 ledger.transferFund(provider1Address, "fine-tuning", ownerInitialFineTuningBalance / 2),
                 ledger.transferFund(provider1Address, "inference", ownerInitialInferenceBalance / 2),
@@ -170,8 +170,8 @@ describe("Ledger manager", () => {
             fineTuningAccount = await fineTuningServing.getAccount(ownerAddress, provider1);
             expect(inferenceAccount.balance).to.equal(BigInt(ownerInitialInferenceBalance));
             expect(fineTuningAccount.balance).to.equal(BigInt(ownerInitialFineTuningBalance));
-            expect(inferenceAccount.pendingRefund).to.equal(BigInt(0));
-            expect(fineTuningAccount.pendingRefund).to.equal(BigInt(0));
+            expect(inferenceAccount.pendingRefund).to.equal(BigInt(ownerInitialInferenceBalance / 2));
+            expect(fineTuningAccount.pendingRefund).to.equal(BigInt(ownerInitialFineTuningBalance / 2));
         });
     });
 

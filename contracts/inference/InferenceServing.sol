@@ -87,6 +87,31 @@ contract InferenceServing is Ownable, Initializable, IServing {
         return accountMap.getAllAccounts();
     }
 
+    function getAccountsByProvider(
+        address provider,
+        uint offset, 
+        uint limit
+    ) public view returns (Account[] memory accounts, uint total) {
+        require(limit == 0 || limit <= 50, "Limit too large");
+        return accountMap.getAccountsByProvider(provider, offset, limit);
+    }
+
+    function getAccountsByUser(
+        address user,
+        uint offset, 
+        uint limit
+    ) public view returns (Account[] memory accounts, uint total) {
+        require(limit == 0 || limit <= 50, "Limit too large");
+        return accountMap.getAccountsByUser(user, offset, limit);
+    }
+
+    function getBatchAccountsByUsers(
+        address[] calldata users
+    ) external view returns (Account[] memory accounts) {
+        return accountMap.getBatchAccountsByUsers(users, msg.sender);
+    }
+    
+
     function acknowledgeProviderSigner(address provider, uint[2] calldata providerPubKey) external {
         accountMap.acknowledgeProviderSigner(msg.sender, provider, providerPubKey);
     }
@@ -120,6 +145,10 @@ contract InferenceServing is Ownable, Initializable, IServing {
 
     function requestRefundAll(address user, address provider) external onlyLedger {
         accountMap.requestRefundAll(user, provider);
+        Account memory account = accountMap.getAccount(user, provider);
+        if (account.refunds.length > 0) {
+            emit RefundRequested(user, provider, account.refunds.length - 1, block.timestamp);
+        }
     }
 
     function processRefund(
@@ -127,11 +156,11 @@ contract InferenceServing is Ownable, Initializable, IServing {
         address provider
     ) external onlyLedger returns (uint totalAmount, uint balance, uint pendingRefund) {
         (totalAmount, balance, pendingRefund) = accountMap.processRefund(user, provider, lockTime);
-        if (totalAmount == 0) {
-            return (0, balance, pendingRefund);
+        
+        if (totalAmount > 0) {
+            payable(msg.sender).transfer(totalAmount);
+            emit BalanceUpdated(user, provider, balance, pendingRefund);
         }
-        payable(msg.sender).transfer(totalAmount);
-        emit BalanceUpdated(user, provider, balance, pendingRefund);
     }
 
     function getService(address provider) public view returns (Service memory service) {

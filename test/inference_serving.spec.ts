@@ -148,6 +148,81 @@ describe("Inference Serving", () => {
                 BigInt(user1InitialInferenceBalance),
             ]);
         });
+
+        it("should get accounts by provider", async () => {
+            // Add another provider for testing
+            await ledger.transferFund(provider2Address, "inference", ownerInitialInferenceBalance);
+            
+            const [accounts1, total1] = await serving.getAccountsByProvider(provider1Address, 0, 0);
+            const [accounts2, total2] = await serving.getAccountsByProvider(provider2Address, 0, 0);
+            
+            expect(total1).to.equal(BigInt(2)); // owner and user1 with provider1
+            expect(total2).to.equal(BigInt(1)); // only owner with provider2
+            expect(accounts1.length).to.equal(2);
+            expect(accounts2.length).to.equal(1);
+            
+            const provider1Users = accounts1.map((a) => a.user);
+            const provider2Users = accounts2.map((a) => a.user);
+            expect(provider1Users).to.have.members([ownerAddress, user1Address]);
+            expect(provider2Users).to.have.members([ownerAddress]);
+        });
+
+        it("should get accounts by provider with pagination", async () => {
+            const [accounts, total] = await serving.getAccountsByProvider(provider1Address, 0, 1);
+            
+            expect(total).to.equal(BigInt(2));
+            expect(accounts.length).to.equal(1);
+            
+            const [accounts2, total2] = await serving.getAccountsByProvider(provider1Address, 1, 1);
+            expect(total2).to.equal(BigInt(2));
+            expect(accounts2.length).to.equal(1);
+            
+            // Check that we get different accounts
+            expect(accounts[0].user).to.not.equal(accounts2[0].user);
+        });
+
+        it("should get accounts by user", async () => {
+            // Add another provider for testing
+            await ledger.transferFund(provider2Address, "inference", ownerInitialInferenceBalance);
+            
+            const [ownerAccounts, ownerTotal] = await serving.getAccountsByUser(ownerAddress, 0, 0);
+            const [user1Accounts, user1Total] = await serving.getAccountsByUser(user1Address, 0, 0);
+            
+            expect(ownerTotal).to.equal(BigInt(2)); // owner with provider1 and provider2
+            expect(user1Total).to.equal(BigInt(1)); // user1 only with provider1
+            expect(ownerAccounts.length).to.equal(2);
+            expect(user1Accounts.length).to.equal(1);
+            
+            const ownerProviders = ownerAccounts.map((a) => a.provider);
+            const user1Providers = user1Accounts.map((a) => a.provider);
+            expect(ownerProviders).to.have.members([provider1Address, provider2Address]);
+            expect(user1Providers).to.have.members([provider1Address]);
+        });
+
+        it("should get batch accounts by users", async () => {
+            const accounts = await serving.connect(provider1).getBatchAccountsByUsers([ownerAddress, user1Address]);
+            
+            expect(accounts.length).to.equal(2);
+            expect(accounts[0].user).to.equal(ownerAddress);
+            expect(accounts[1].user).to.equal(user1Address);
+            expect(accounts[0].provider).to.equal(provider1Address);
+            expect(accounts[1].provider).to.equal(provider1Address);
+        });
+
+        it("should handle batch accounts with non-existent users", async () => {
+            const nonExistentUser = ethers.Wallet.createRandom().address;
+            const accounts = await serving.connect(provider1).getBatchAccountsByUsers([ownerAddress, nonExistentUser, user1Address]);
+            
+            expect(accounts.length).to.equal(3);
+            expect(accounts[0].user).to.equal(ownerAddress);
+            expect(accounts[1].user).to.equal("0x0000000000000000000000000000000000000000"); // non-existent should be zero
+            expect(accounts[2].user).to.equal(user1Address);
+        });
+
+        it("should enforce pagination limits", async () => {
+            await expect(serving.getAccountsByProvider(provider1Address, 0, 51)).to.be.revertedWith("Limit too large");
+            await expect(serving.getAccountsByUser(ownerAddress, 0, 51)).to.be.revertedWith("Limit too large");
+        });
     });
 
     describe("Process refund", () => {
