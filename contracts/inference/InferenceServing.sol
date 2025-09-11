@@ -8,11 +8,21 @@ import "./InferenceAccount.sol";
 import "./InferenceService.sol";
 import "../ledger/LedgerManager.sol";
 
+// Legacy ZK structures - kept for storage compatibility
 struct VerifierInput {
     uint[] inProof;
     uint[] proofInputs;
     uint numChunks;
     uint[] segmentSize;
+}
+
+struct TEESettlementData {
+    address user;
+    address provider;
+    uint256 totalFee;
+    bytes32 requestsHash;
+    uint256 nonce;
+    bytes signature;
 }
 
 interface IBatchVerifier {
@@ -28,9 +38,9 @@ contract InferenceServing is Ownable, Initializable, IServing {
     using ServiceLibrary for ServiceLibrary.ServiceMap;
 
     uint public lockTime;
-    address public batchVerifierAddress;
+    address public batchVerifierAddress; // Legacy - kept for storage compatibility
     address public ledgerAddress;
-    IBatchVerifier private batchVerifier;
+    IBatchVerifier private batchVerifier; // Legacy - kept for storage compatibility
     ILedger private ledger;
     AccountLibrary.AccountMap private accountMap;
     ServiceLibrary.ServiceMap private serviceMap;
@@ -48,21 +58,24 @@ contract InferenceServing is Ownable, Initializable, IServing {
         string verifiability
     );
     event ServiceRemoved(address indexed service);
+    event TEESettlementCompleted(address indexed provider, uint successCount, uint failedCount);
+    event TEESettlementFailed(address indexed provider, address indexed user, string reason);
 
-    error InvalidProofInputs(string reason);
+    error InvalidProofInputs(string reason); // Legacy - kept for compatibility
+    error InvalidTEESignature(string reason);
 
     function initialize(
         uint _locktime,
-        address _batchVerifierAddress,
+        address _batchVerifierAddress, // Legacy parameter - kept for compatibility
         address _ledgerAddress,
         address owner
     ) public onlyInitializeOnce {
         _transferOwnership(owner);
         lockTime = _locktime;
-        batchVerifierAddress = _batchVerifierAddress;
+        batchVerifierAddress = _batchVerifierAddress; // Set but not used
         ledgerAddress = _ledgerAddress;
         ledger = ILedger(ledgerAddress);
-        batchVerifier = IBatchVerifier(batchVerifierAddress);
+        // batchVerifier no longer initialized as it's deprecated
     }
 
     modifier onlyLedger() {
@@ -74,9 +87,10 @@ contract InferenceServing is Ownable, Initializable, IServing {
         lockTime = _locktime;
     }
 
+    // Legacy function - kept for compatibility but deprecated
     function updateBatchVerifierAddress(address _batchVerifierAddress) public onlyOwner {
         batchVerifierAddress = _batchVerifierAddress;
-        batchVerifier = IBatchVerifier(batchVerifierAddress);
+        // batchVerifier no longer used - function is deprecated
     }
 
     function getAccount(address user, address provider) public view returns (Account memory) {
@@ -89,7 +103,7 @@ contract InferenceServing is Ownable, Initializable, IServing {
 
     function getAccountsByProvider(
         address provider,
-        uint offset, 
+        uint offset,
         uint limit
     ) public view returns (Account[] memory accounts, uint total) {
         require(limit == 0 || limit <= 50, "Limit too large");
@@ -98,22 +112,23 @@ contract InferenceServing is Ownable, Initializable, IServing {
 
     function getAccountsByUser(
         address user,
-        uint offset, 
+        uint offset,
         uint limit
     ) public view returns (Account[] memory accounts, uint total) {
         require(limit == 0 || limit <= 50, "Limit too large");
         return accountMap.getAccountsByUser(user, offset, limit);
     }
 
-    function getBatchAccountsByUsers(
-        address[] calldata users
-    ) external view returns (Account[] memory accounts) {
+    function getBatchAccountsByUsers(address[] calldata users) external view returns (Account[] memory accounts) {
         return accountMap.getBatchAccountsByUsers(users, msg.sender);
     }
-    
 
     function acknowledgeProviderSigner(address provider, uint[2] calldata providerPubKey) external {
         accountMap.acknowledgeProviderSigner(msg.sender, provider, providerPubKey);
+    }
+
+    function acknowledgeTEESigner(address provider, address teeSignerAddress) external {
+        accountMap.acknowledgeTEESigner(msg.sender, provider, teeSignerAddress);
     }
 
     function accountExists(address user, address provider) public view returns (bool) {
@@ -156,7 +171,7 @@ contract InferenceServing is Ownable, Initializable, IServing {
         address provider
     ) external onlyLedger returns (uint totalAmount, uint balance, uint pendingRefund) {
         (totalAmount, balance, pendingRefund) = accountMap.processRefund(user, provider, lockTime);
-        
+
         if (totalAmount > 0) {
             payable(msg.sender).transfer(totalAmount);
             emit BalanceUpdated(user, provider, balance, pendingRefund);
@@ -190,70 +205,11 @@ contract InferenceServing is Ownable, Initializable, IServing {
         emit ServiceRemoved(msg.sender);
     }
 
-    function settleFees(VerifierInput calldata verifierInput) external {
-        bool zkPassed = batchVerifier.verifyBatch(
-            verifierInput.inProof,
-            verifierInput.proofInputs,
-            verifierInput.numChunks
-        );
-        if (!zkPassed) {
-            revert InvalidProofInputs("ZK settlement validation failed");
-        }
-
-        uint[] memory inputs = verifierInput.proofInputs;
-        uint start = 0;
-        uint expectedProviderAddress = uint(uint160(msg.sender));
-
-        for (uint segmentIdx = 0; segmentIdx < verifierInput.segmentSize.length; segmentIdx++) {
-            uint segmentSize = verifierInput.segmentSize[segmentIdx];
-            uint end = start + segmentSize;
-
-            uint totalCosts = 0;
-            uint expectedUserAddress = inputs[start];
-            uint firstRequestNonce = inputs[start + 2];
-            uint lastRequestNonce = inputs[start + 3];
-            Account storage account = accountMap.getAccount(address(uint160(expectedUserAddress)), msg.sender);
-            if (account.signer[0] != inputs[start + 5] || account.signer[1] != inputs[start + 6]) {
-                revert InvalidProofInputs("signer key is incorrect");
-            }
-            if (account.providerPubKey[0] != inputs[start + 7] || account.providerPubKey[1] != inputs[start + 8]) {
-                revert InvalidProofInputs("provider signer key is incorrect");
-            }
-
-            if (account.nonce > firstRequestNonce) {
-                revert InvalidProofInputs("initial nonce is incorrect");
-            }
-            for (uint chunkIdx = start; chunkIdx < end; chunkIdx += 9) {
-                uint userAddress = inputs[chunkIdx];
-                uint providerAddress = inputs[chunkIdx + 1];
-                lastRequestNonce = inputs[chunkIdx + 3];
-                uint cost = inputs[chunkIdx + 4];
-                uint nextChunkFirstRequestNonce = chunkIdx + 11 < end ? inputs[chunkIdx + 11] : 0;
-
-                if (nextChunkFirstRequestNonce != 0 && lastRequestNonce >= nextChunkFirstRequestNonce) {
-                    revert InvalidProofInputs("nonce overlapped");
-                }
-
-                if (userAddress != expectedUserAddress || providerAddress != expectedProviderAddress) {
-                    revert InvalidProofInputs(
-                        userAddress != expectedUserAddress
-                            ? "user address is incorrect"
-                            : "provider address is incorrect"
-                    );
-                }
-
-                totalCosts += cost;
-            }
-            if (account.balance < totalCosts) {
-                revert InvalidProofInputs("insufficient balance");
-            }
-            _settleFees(account, totalCosts);
-            start = end;
-            account.nonce = lastRequestNonce;
-        }
-        if (start != inputs.length) {
-            revert InvalidProofInputs("array segmentSize sum mismatches public input length");
-        }
+    // DEPRECATED: ZK-based settlement function - kept for compatibility but disabled
+    function settleFees(VerifierInput calldata /* verifierInput */) external pure {
+        // This function is deprecated and disabled
+        // Use settleFeesWithTEE instead
+        revert InvalidProofInputs("ZK settlement is deprecated, use TEE settlement instead");
     }
 
     function _settleFees(Account storage account, uint amount) private {
@@ -286,5 +242,119 @@ contract InferenceServing is Ownable, Initializable, IServing {
         ledger.spendFund(account.user, amount);
         emit BalanceUpdated(account.user, msg.sender, account.balance, account.pendingRefund);
         payable(msg.sender).transfer(amount);
+    }
+
+    function settleFeesWithTEE(
+        TEESettlementData[] calldata settlements
+    ) external returns (address[] memory failedUsers) {
+        require(settlements.length > 0, "No settlements provided");
+
+        address[] memory tempFailedUsers = new address[](settlements.length);
+        uint failedCount = 0;
+        uint successCount = 0;
+
+        for (uint i = 0; i < settlements.length; i++) {
+            TEESettlementData memory settlement = settlements[i];
+
+            // Process settlement inline to better handle errors
+            (bool success, string memory failureReason) = _processTEESettlementInternal(settlement, msg.sender);
+
+            if (success) {
+                successCount++;
+            } else {
+                tempFailedUsers[failedCount] = settlement.user;
+                failedCount++;
+                emit TEESettlementFailed(msg.sender, settlement.user, failureReason);
+            }
+        }
+
+        // Create array with exact size for failed users
+        failedUsers = new address[](failedCount);
+        for (uint i = 0; i < failedCount; i++) {
+            failedUsers[i] = tempFailedUsers[i];
+        }
+
+        // Emit completion event
+        emit TEESettlementCompleted(msg.sender, successCount, failedCount);
+    }
+
+    function _processTEESettlementInternal(
+        TEESettlementData memory settlement,
+        address provider
+    ) private returns (bool success, string memory failureReason) {
+        // Verify provider matches
+        if (settlement.provider != provider) {
+            return (false, "Provider mismatch");
+        }
+
+        // Get account to verify provider's TEE signer
+        Account storage account = accountMap.getAccount(settlement.user, provider);
+
+        // Verify that the account has acknowledged a TEE signer
+        if (account.teeSignerAddress == address(0)) {
+            return (false, "TEE signer not acknowledged");
+        }
+
+        // Verify TEE signature
+        bytes32 messageHash = keccak256(
+            abi.encodePacked(
+                settlement.requestsHash,
+                settlement.nonce,
+                settlement.provider,
+                settlement.user,
+                settlement.totalFee
+            )
+        );
+
+        // Add Ethereum Signed Message prefix to match what ethers.js signMessage expects
+        bytes32 ethSignedMessageHash = keccak256(abi.encodePacked("\x19Ethereum Signed Message:\n32", messageHash));
+
+        // Recover signer address from signature
+        address recoveredSigner = recoverSigner(ethSignedMessageHash, settlement.signature);
+
+        // Verify the signature is from the acknowledged TEE signer
+        if (recoveredSigner != account.teeSignerAddress) {
+            return (false, "Invalid TEE signer");
+        }
+
+        // Check that nonce is greater than the recorded nonce
+        if (account.nonce >= settlement.nonce) {
+            return (false, "Nonce already processed");
+        }
+
+        // Check balance sufficiency
+        if (account.balance < settlement.totalFee) {
+            return (false, "Insufficient balance");
+        }
+
+        // Update account nonce
+        account.nonce = settlement.nonce;
+
+        // Settle the fees
+        _settleFees(account, settlement.totalFee);
+
+        return (true, "");
+    }
+
+    function recoverSigner(bytes32 ethSignedMessageHash, bytes memory signature) internal pure returns (address) {
+        require(signature.length == 65, "Invalid signature length");
+
+        bytes32 r;
+        bytes32 s;
+        uint8 v;
+
+        assembly {
+            // Extract r, s, v from signature
+            r := mload(add(signature, 32))
+            s := mload(add(signature, 64))
+            v := byte(0, mload(add(signature, 96)))
+        }
+
+        // Handle both possible v values (27/28 or 0/1)
+        if (v < 27) {
+            v += 27;
+        }
+
+        return ecrecover(ethSignedMessageHash, v, r, s);
     }
 }

@@ -6,22 +6,13 @@ import { Block, TransactionReceipt } from "ethers";
 import { deployments, ethers } from "hardhat";
 import { Deployment } from "hardhat-deploy/types";
 import { beforeEach } from "mocha";
-import {
-    doubleSpendingInProof,
-    doubleSpendingProofInputs,
-    insufficientBalanceInProof,
-    insufficientBalanceProofInputs,
-    publicKey,
-    resPublicKey,
-    succeedFee,
-    succeedInProof,
-    succeedProofInputs,
-} from "../src/utils/zk_settlement_calldata/golden";
+// Mock public key for testing - just a placeholder as ZK is no longer used
+const publicKey: [bigint, bigint] = [BigInt(1), BigInt(2)];
 import { InferenceServing as Serving, LedgerManager } from "../typechain-types";
 import {
     AccountStructOutput,
     ServiceStructOutput,
-    VerifierInputStruct,
+    TEESettlementDataStruct,
 } from "../typechain-types/contracts/inference/InferenceServing.sol/InferenceServing";
 
 describe("Inference Serving", () => {
@@ -332,45 +323,280 @@ describe("Inference Serving", () => {
         });
     });
 
-    describe("Settle fees", () => {
-        it("should succeed", async () => {
-            serving.connect(owner).acknowledgeProviderSigner(provider1Address, resPublicKey);
-            serving.connect(user1).acknowledgeProviderSigner(provider1Address, resPublicKey);
-
-            const verifierInput: VerifierInputStruct = {
-                inProof: succeedInProof,
-                proofInputs: succeedProofInputs,
-                numChunks: BigInt(2),
-                segmentSize: [BigInt(9), BigInt(9)],
+    describe("TEE Settlement", () => {
+        const testFee = 50;
+        const testRequestsHash = ethers.keccak256(ethers.toUtf8Bytes("test_requests_hash"));
+        
+        // Create a separate wallet for TEE signing
+        const teePrivateKey = "0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d";
+        const teeWallet = new ethers.Wallet(teePrivateKey);
+        const teeSignerAddress = teeWallet.address;
+        
+        beforeEach(async () => {
+            // Acknowledge TEE signer for both users - using a dedicated TEE signer
+            await serving.connect(owner).acknowledgeTEESigner(provider1Address, teeSignerAddress);
+            await serving.connect(user1).acknowledgeTEESigner(provider1Address, teeSignerAddress);
+        });
+        
+        async function createValidTEESettlement(
+            user: string,
+            provider: string, 
+            totalFee: bigint,
+            requestsHash: string,
+            nonce: bigint
+        ): Promise<TEESettlementDataStruct> {
+            // Create message hash exactly like the contract
+            const messageHash = ethers.solidityPackedKeccak256(
+                ["bytes32", "uint256", "address", "address", "uint256"],
+                [requestsHash, nonce, provider, user, totalFee]
+            );
+            
+            // Sign using the exact same approach as fine_tuning_serving.spec.ts backfillVerifierInput
+            const signature = await teeWallet.signMessage(ethers.toBeArray(messageHash));
+            
+            return {
+                user,
+                provider,
+                totalFee,
+                requestsHash,
+                nonce,
+                signature
             };
+        }
+        
+        it("should succeed with valid TEE settlement", async () => {
+            const nonce = BigInt(Date.now());
+            const settlement = await createValidTEESettlement(
+                ownerAddress,
+                provider1Address,
+                BigInt(testFee),
+                testRequestsHash,
+                nonce
+            );
 
-            await expect(serving.connect(provider1).settleFees(verifierInput))
-                .to.emit(serving, "BalanceUpdated")
-                .withArgs(ownerAddress, provider1Address, ownerInitialInferenceBalance - succeedFee, 0)
-                .and.to.emit(serving, "BalanceUpdated")
-                .withArgs(user1Address, provider1Address, user1InitialInferenceBalance - succeedFee, 0);
+            // Get initial balance
+            const initialBalance = await serving.getAccount(ownerAddress, provider1Address);
+            
+            // Execute settlement and verify success
+            await expect(serving.connect(provider1).settleFeesWithTEE([settlement]))
+                .to.emit(serving, "TEESettlementCompleted")
+                .withArgs(provider1Address, 1, 0); // 1 success, 0 failures
+            
+            // Verify balance was deducted
+            const finalBalance = await serving.getAccount(ownerAddress, provider1Address);
+            expect(finalBalance.balance).to.equal(initialBalance.balance - BigInt(testFee));
+            expect(finalBalance.nonce).to.equal(nonce);
         });
 
-        it("should failed due to double spending", async () => {
-            const verifierInput: VerifierInputStruct = {
-                inProof: doubleSpendingInProof,
-                proofInputs: doubleSpendingProofInputs,
-                numChunks: BigInt(2),
-                segmentSize: [BigInt(14)],
-            };
 
-            await expect(serving.connect(provider1).settleFees(verifierInput)).to.be.reverted;
+
+        it("should handle multiple settlements in batch", async () => {
+            const nonce1 = BigInt(Date.now());
+            const nonce2 = nonce1 + BigInt(1);
+            
+            const settlement1 = await createValidTEESettlement(
+                ownerAddress,
+                provider1Address,
+                BigInt(testFee),
+                testRequestsHash,
+                nonce1
+            );
+
+            const settlement2 = await createValidTEESettlement(
+                user1Address,
+                provider1Address,
+                BigInt(testFee),
+                testRequestsHash,
+                nonce2
+            );
+
+            // Get initial balances
+            const initialBalance1 = await serving.getAccount(ownerAddress, provider1Address);
+            const initialBalance2 = await serving.getAccount(user1Address, provider1Address);
+            
+            // Execute batch settlement - both should succeed
+            await expect(serving.connect(provider1).settleFeesWithTEE([settlement1, settlement2]))
+                .to.emit(serving, "TEESettlementCompleted")
+                .withArgs(provider1Address, 2, 0); // 2 successes, 0 failures
+            
+            // Verify both balances were deducted
+            const finalBalance1 = await serving.getAccount(ownerAddress, provider1Address);
+            const finalBalance2 = await serving.getAccount(user1Address, provider1Address);
+            expect(finalBalance1.balance).to.equal(initialBalance1.balance - BigInt(testFee));
+            expect(finalBalance2.balance).to.equal(initialBalance2.balance - BigInt(testFee));
         });
 
-        it("should failed due to insufficient balance", async () => {
-            const verifierInput: VerifierInputStruct = {
-                inProof: insufficientBalanceInProof,
-                proofInputs: insufficientBalanceProofInputs,
-                numChunks: BigInt(1),
-                segmentSize: [BigInt(7)],
+        it("should handle insufficient balance gracefully", async () => {
+            const excessiveFee = ownerInitialInferenceBalance + 1000;
+            const nonce = BigInt(Date.now());
+            
+            const settlement = await createValidTEESettlement(
+                ownerAddress,
+                provider1Address,
+                BigInt(excessiveFee),
+                testRequestsHash,
+                nonce
+            );
+
+            // Get initial balance to verify it doesn't change after failed settlement
+            const initialBalance = await serving.getAccount(ownerAddress, provider1Address);
+
+            // Execute settlement - should fail due to insufficient balance
+            await expect(serving.connect(provider1).settleFeesWithTEE([settlement]))
+                .to.emit(serving, "TEESettlementCompleted")
+                .withArgs(provider1Address, 0, 1) // 0 successes, 1 failure
+                .and.to.emit(serving, "TEESettlementFailed")
+                .withArgs(provider1Address, ownerAddress, "Insufficient balance");
+            
+            // Verify balance unchanged (settlement failed)
+            const finalBalance = await serving.getAccount(ownerAddress, provider1Address);
+            expect(finalBalance.balance).to.equal(initialBalance.balance);
+            expect(finalBalance.nonce).to.equal(initialBalance.nonce); // Nonce shouldn't update on failure
+        });
+
+        it("should handle mixed success and failure in batch settlement", async () => {
+            const nonce1 = BigInt(Date.now());
+            const nonce2 = nonce1 + BigInt(1);
+            
+            // Create settlement with sufficient balance (should potentially succeed)
+            const potentialSuccessSettlement = await createValidTEESettlement(
+                user1Address,
+                provider1Address,
+                BigInt(testFee),
+                testRequestsHash,
+                nonce1
+            );
+
+            // Create settlement with insufficient balance (should definitely fail)
+            const excessiveFee = ownerInitialInferenceBalance + 1000;
+            const definiteFailSettlement = await createValidTEESettlement(
+                ownerAddress,
+                provider1Address,
+                BigInt(excessiveFee),
+                testRequestsHash,
+                nonce2
+            );
+
+            // Get initial balances
+            const initialBalance1 = await serving.getAccount(user1Address, provider1Address);
+            const initialBalance2 = await serving.getAccount(ownerAddress, provider1Address);
+            
+            // Execute mixed batch - one success, one failure
+            await expect(serving.connect(provider1).settleFeesWithTEE([potentialSuccessSettlement, definiteFailSettlement]))
+                .to.emit(serving, "TEESettlementCompleted")
+                .withArgs(provider1Address, 1, 1) // 1 success, 1 failure
+                .and.to.emit(serving, "TEESettlementFailed")
+                .withArgs(provider1Address, ownerAddress, "Insufficient balance");
+            
+            // Verify user1 succeeded (balance deducted), owner failed (balance unchanged)
+            const finalBalance1 = await serving.getAccount(user1Address, provider1Address);
+            const finalBalance2 = await serving.getAccount(ownerAddress, provider1Address);
+            expect(finalBalance1.balance).to.equal(initialBalance1.balance - BigInt(testFee)); // User1 succeeded
+            expect(finalBalance2.balance).to.equal(initialBalance2.balance); // Owner failed
+        });
+
+        it("should fail with invalid signature", async () => {
+            const settlement: TEESettlementDataStruct = {
+                user: ownerAddress,
+                provider: provider1Address,
+                totalFee: BigInt(testFee),
+                requestsHash: testRequestsHash,
+                nonce: BigInt(Date.now()),
+                signature: "0x" + "00".repeat(65) // Invalid mock signature
             };
 
-            await expect(serving.connect(provider1).settleFees(verifierInput)).to.be.reverted;
+            // Get initial balance to verify it doesn't change after failed settlement
+            const initialBalance = await serving.getAccount(ownerAddress, provider1Address);
+
+            // Execute settlement - should fail due to invalid signature
+            await expect(serving.connect(provider1).settleFeesWithTEE([settlement]))
+                .to.emit(serving, "TEESettlementCompleted")
+                .withArgs(provider1Address, 0, 1) // 0 successes, 1 failure
+                .and.to.emit(serving, "TEESettlementFailed")
+                .withArgs(provider1Address, ownerAddress, anyValue);
+            
+            // Verify balance unchanged (settlement failed)
+            const finalBalance = await serving.getAccount(ownerAddress, provider1Address);
+            expect(finalBalance.balance).to.equal(initialBalance.balance);
+            expect(finalBalance.nonce).to.equal(initialBalance.nonce); // Nonce shouldn't update on failure
+        });
+
+
+        it("should prevent duplicate nonce usage", async () => {
+            const nonce = BigInt(Date.now());
+            
+            const settlement1 = await createValidTEESettlement(
+                ownerAddress,
+                provider1Address,
+                BigInt(testFee),
+                testRequestsHash,
+                nonce
+            );
+
+            // Get initial balance
+            const initialBalance = await serving.getAccount(ownerAddress, provider1Address);
+            
+            // First settlement should succeed
+            await expect(serving.connect(provider1).settleFeesWithTEE([settlement1]))
+                .to.emit(serving, "TEESettlementCompleted")
+                .withArgs(provider1Address, 1, 0); // 1 success, 0 failures
+            
+            // Verify first settlement succeeded
+            const balanceAfterFirst = await serving.getAccount(ownerAddress, provider1Address);
+            expect(balanceAfterFirst.balance).to.equal(initialBalance.balance - BigInt(testFee));
+            expect(balanceAfterFirst.nonce).to.equal(nonce);
+
+            // Second settlement with same nonce should fail
+            const settlement2 = await createValidTEESettlement(
+                ownerAddress,
+                provider1Address,
+                BigInt(testFee),
+                testRequestsHash,
+                nonce // Same nonce
+            );
+
+            // Execute second settlement - should fail due to duplicate nonce
+            await expect(serving.connect(provider1).settleFeesWithTEE([settlement2]))
+                .to.emit(serving, "TEESettlementCompleted")
+                .withArgs(provider1Address, 0, 1) // 0 successes, 1 failure
+                .and.to.emit(serving, "TEESettlementFailed")
+                .withArgs(provider1Address, ownerAddress, "Nonce already processed");
+            
+            // Verify balance unchanged after failed second settlement
+            const finalBalance = await serving.getAccount(ownerAddress, provider1Address);
+            expect(finalBalance.balance).to.equal(balanceAfterFirst.balance);
+        });
+
+        it("should revert with empty settlements array", async () => {
+            await expect(serving.connect(provider1).settleFeesWithTEE([]))
+                .to.be.revertedWith("No settlements provided");
+        });
+
+        it("should handle provider mismatch", async () => {
+            const nonce = BigInt(Date.now());
+            
+            const settlement = await createValidTEESettlement(
+                ownerAddress,
+                provider2Address, // Different provider than the one calling
+                BigInt(testFee),
+                testRequestsHash,
+                nonce
+            );
+
+            // Get initial balance from provider1 (the one we'll call with)
+            const initialBalance = await serving.getAccount(ownerAddress, provider1Address);
+
+            // Execute settlement - should fail due to provider mismatch
+            await expect(serving.connect(provider1).settleFeesWithTEE([settlement]))
+                .to.emit(serving, "TEESettlementCompleted")
+                .withArgs(provider1Address, 0, 1) // 0 successes, 1 failure
+                .and.to.emit(serving, "TEESettlementFailed")
+                .withArgs(provider1Address, ownerAddress, "Provider mismatch");
+            
+            // Verify balance unchanged with provider1 (settlement failed)
+            const finalBalance = await serving.getAccount(ownerAddress, provider1Address);
+            expect(finalBalance.balance).to.equal(initialBalance.balance);
+            expect(finalBalance.nonce).to.equal(initialBalance.nonce);
         });
     });
 

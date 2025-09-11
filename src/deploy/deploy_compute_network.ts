@@ -8,20 +8,19 @@ const penaltyPercentage = parseInt(process.env["PENALTY_PERCENTAGE"] || "30");
 const deploy: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
     const { deployer } = await hre.getNamedAccounts();
 
-    const verifier_ = await getTypedContract(hre, CONTRACTS.Verifier);
     const inferenceServing = await getTypedContract(hre, CONTRACTS.InferenceServing);
 
     const fineTuningServing = await getTypedContract(hre, CONTRACTS.FineTuningServing);
     const ledgerManager = await getTypedContract(hre, CONTRACTS.LedgerManager);
 
-    const verifierAddress = await verifier_.getAddress();
     const fineTuningServingAddress = await fineTuningServing.getAddress();
     const inferenceServingAddress = await inferenceServing.getAddress();
     const ledgerManagerAddress = await ledgerManager.getAddress();
 
     console.log(`initializing inference serving..`);
     if (!(await inferenceServing.initialized())) {
-        await (await inferenceServing.initialize(lockTime, verifierAddress, ledgerManagerAddress, deployer)).wait();
+        // Initialize without verifier address as ZK verification is no longer used
+        await (await inferenceServing.initialize(lockTime, "0x0000000000000000000000000000000000000000", ledgerManagerAddress, deployer)).wait();
     }
 
     console.log(`initializing fine-tuning serving..`);

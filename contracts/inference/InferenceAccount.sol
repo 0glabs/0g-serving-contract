@@ -13,6 +13,7 @@ struct Account {
     Refund[] refunds;
     string additionalInfo;
     uint[2] providerPubKey;
+    address teeSignerAddress;  // TEE ECDSA signer address for settlement verification
 }
 
 struct Refund {
@@ -188,6 +189,16 @@ library AccountLibrary {
     ) internal {
         Account storage account = _get(map, user, provider);
         account.providerPubKey = providerPubKey;
+    }
+    
+    function acknowledgeTEESigner(
+        AccountMap storage map,
+        address user,
+        address provider,
+        address teeSignerAddress
+    ) internal {
+        Account storage account = _get(map, user, provider);
+        account.teeSignerAddress = teeSignerAddress;
     }
 
     function depositFund(

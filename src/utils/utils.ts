@@ -50,7 +50,6 @@ export const CONTRACTS = {
     LedgerManager: new ContractMeta(Factories.LedgerManager__factory),
     InferenceServing: new ContractMeta(Factories.InferenceServing__factory),
     FineTuningServing: new ContractMeta(Factories.FineTuningServing__factory),
-    Verifier: new ContractMeta(Factories.Wrapper__factory),
 } as const;
 
 type GetContractTypeFromContractMeta<F> = F extends ContractMeta<infer C> ? C : never;
