@@ -5,7 +5,8 @@ import { Block, ethers as newEthers, TransactionReceipt } from "ethers";
 import { deployments, ethers } from "hardhat";
 import { Deployment } from "hardhat-deploy/types";
 import { beforeEach } from "mocha";
-import { publicKey } from "../src/utils/zk_settlement_calldata/golden";
+// Mock public key for testing - just a placeholder as ZK is no longer used
+const publicKey: [bigint, bigint] = [BigInt(1), BigInt(2)];
 import { FineTuningServing as Serving, LedgerManager } from "../typechain-types";
 import {
     AccountStructOutput,

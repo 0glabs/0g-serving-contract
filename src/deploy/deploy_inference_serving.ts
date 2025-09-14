@@ -7,5 +7,5 @@ const deploy: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
 };
 
 deploy.tags = [CONTRACTS.InferenceServing.name];
-deploy.dependencies = [CONTRACTS.Verifier.name];
+deploy.dependencies = [];
 export default deploy;
