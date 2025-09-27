@@ -5,10 +5,10 @@ import { Block, TransactionReceipt } from "ethers";
 import { deployments, ethers } from "hardhat";
 import { Deployment } from "hardhat-deploy/types";
 import { beforeEach } from "mocha";
-// Mock public key for testing - just a placeholder as ZK is no longer used
-const publicKey: [bigint, bigint] = [BigInt(1), BigInt(2)];
 import { FineTuningServing, InferenceServing, LedgerManager } from "../typechain-types";
 import { LedgerStructOutput } from "../typechain-types/contracts/ledger/LedgerManager.sol/LedgerManager";
+// Mock public key for testing - just a placeholder as ZK is no longer used
+const publicKey: [bigint, bigint] = [BigInt(1), BigInt(2)];
 
 describe("Ledger manager", () => {
     let inferenceServing: InferenceServing;
@@ -176,7 +176,6 @@ describe("Ledger manager", () => {
             expect(fineTuningAccount.pendingRefund).to.equal(BigInt(ownerInitialFineTuningBalance / 2));
         });
 
-
         it("should handle array optimization during multiple transfer operations", async () => {
             // Step 1: Setup initial account and create refund
             // Before: balance=0, pendingRefund=0, refunds=[], validRefundsLength=0
@@ -184,11 +183,11 @@ describe("Ledger manager", () => {
             // After transfer: balance=800, pendingRefund=0, refunds=[], validRefundsLength=0
             await ledger.retrieveFund([provider1Address], "fine-tuning");
             // After refund request: balance=800, pendingRefund=800, refunds=[{amount:800, processed:false}], validRefundsLength=1
-            
+
             let account = await fineTuningServing.getAccount(ownerAddress, provider1);
             expect(account.refunds.length).to.equal(1);
             expect(account.pendingRefund).to.equal(800);
-            
+
             // Step 2: Transfer with full cancellation
             // Before: balance=800, pendingRefund=800, refunds=[{amount:800, processed:false}]
             await ledger.transferFund(provider1Address, "fine-tuning", 1000);
@@ -196,17 +195,17 @@ describe("Ledger manager", () => {
             // - Entire refund is cancelled: refund marked as processed
             // - PendingRefund becomes 800-800=0
             // After: balance=1000, pendingRefund=0, refunds=[{amount:800, processed:true}], validRefundsLength=0
-            
+
             account = await fineTuningServing.getAccount(ownerAddress, provider1);
             expect(account.pendingRefund).to.equal(0);
-            expect(account.balance).to.equal(1000); 
-            
+            expect(account.balance).to.equal(1000);
+
             // Step 3: Create new refund - should reuse array position
             // Before: balance=1000, pendingRefund=0, refunds=[dirty_data], validRefundsLength=0
             await ledger.retrieveFund([provider1Address], "fine-tuning");
             // After: balance=1000, pendingRefund=1000, refunds=[{amount:1000, processed:false}], validRefundsLength=1
             // Key optimization: Same array position is REUSED (index 0), no array expansion
-            
+
             account = await fineTuningServing.getAccount(ownerAddress, provider1);
             expect(account.refunds.length).to.equal(1); // Reusing position
             expect(account.pendingRefund).to.equal(1000);

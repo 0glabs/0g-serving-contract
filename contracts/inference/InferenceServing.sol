@@ -8,7 +8,6 @@ import "./InferenceAccount.sol";
 import "./InferenceService.sol";
 import "../ledger/LedgerManager.sol";
 
-
 struct TEESettlementData {
     address user;
     address provider;
@@ -17,7 +16,6 @@ struct TEESettlementData {
     uint nonce;
     bytes signature;
 }
-
 
 contract InferenceServing is Ownable, Initializable, IServing {
     using AccountLibrary for AccountLibrary.AccountMap;
@@ -48,11 +46,7 @@ contract InferenceServing is Ownable, Initializable, IServing {
     error InvalidProofInputs(string reason);
     error InvalidTEESignature(string reason);
 
-    function initialize(
-        uint _locktime,
-        address _ledgerAddress,
-        address owner
-    ) public onlyInitializeOnce {
+    function initialize(uint _locktime, address _ledgerAddress, address owner) public onlyInitializeOnce {
         _transferOwnership(owner);
         lockTime = _locktime;
         ledgerAddress = _ledgerAddress;
@@ -72,10 +66,7 @@ contract InferenceServing is Ownable, Initializable, IServing {
         return accountMap.getAccount(user, provider);
     }
 
-    function getAllAccounts(
-        uint offset,
-        uint limit
-    ) public view returns (Account[] memory accounts, uint total) {
+    function getAllAccounts(uint offset, uint limit) public view returns (Account[] memory accounts, uint total) {
         require(limit == 0 || limit <= 50, "Limit too large");
         return accountMap.getAllAccounts(offset, limit);
     }
@@ -183,8 +174,6 @@ contract InferenceServing is Ownable, Initializable, IServing {
         serviceMap.removeService(msg.sender);
         emit ServiceRemoved(msg.sender);
     }
-
- 
 
     function _settleFees(Account storage account, uint amount) private {
         if (amount > (account.balance - account.pendingRefund)) {

@@ -15,11 +15,11 @@ struct Account {
     Refund[] refunds;
     string additionalInfo;
     address providerSigner;
-    mapping(string => Deliverable) deliverables;  // ID -> Deliverable mapping
-    string[MAX_DELIVERABLES_PER_ACCOUNT] deliverableIds;  // Circular array of IDs
-    uint validRefundsLength;  // Track the number of valid (non-dirty) refunds
-    uint deliverablesHead;    // Circular array head pointer (oldest position)
-    uint deliverablesCount;   // Current count of deliverables
+    mapping(string => Deliverable) deliverables; // ID -> Deliverable mapping
+    string[MAX_DELIVERABLES_PER_ACCOUNT] deliverableIds; // Circular array of IDs
+    uint validRefundsLength; // Track the number of valid (non-dirty) refunds
+    uint deliverablesHead; // Circular array head pointer (oldest position)
+    uint deliverablesCount; // Current count of deliverables
 }
 
 struct Refund {
@@ -30,11 +30,11 @@ struct Refund {
 }
 
 struct Deliverable {
-    string id;               // Unique identifier for the deliverable
+    string id; // Unique identifier for the deliverable
     bytes modelRootHash;
     bytes encryptedSecret;
     bool acknowledged;
-    uint timestamp;          // When this deliverable was added
+    uint timestamp; // When this deliverable was added
 }
 
 struct AccountSummary {
@@ -58,7 +58,7 @@ struct AccountDetails {
     Refund[] refunds;
     string additionalInfo;
     address providerSigner;
-    Deliverable[] deliverables;  // For backward compatibility, we'll populate this from the mapping
+    Deliverable[] deliverables; // For backward compatibility, we'll populate this from the mapping
     uint validRefundsLength;
     uint deliverablesHead;
     uint deliverablesCount;
@@ -66,7 +66,7 @@ struct AccountDetails {
 
 library AccountLibrary {
     using EnumerableSet for EnumerableSet.Bytes32Set;
-    
+
     // Constants for optimization
     uint constant MAX_REFUNDS_PER_ACCOUNT = 30;
     uint constant REFUND_CLEANUP_THRESHOLD = 15;
@@ -103,10 +103,10 @@ library AccountLibrary {
         address provider
     ) internal view returns (AccountDetails memory details) {
         Account storage account = _get(map, user, provider);
-        
+
         // Get deliverables in chronological order
         Deliverable[] memory deliverables = getDeliverables(map, user, provider);
-        
+
         details = AccountDetails({
             user: account.user,
             provider: account.provider,
@@ -129,16 +129,16 @@ library AccountLibrary {
         uint limit
     ) internal view returns (AccountSummary[] memory accounts, uint total) {
         total = _length(map);
-        
+
         if (offset >= total) {
             return (new AccountSummary[](0), total);
         }
-        
+
         uint end = offset + limit;
         if (limit == 0 || end > total) {
             end = total;
         }
-        
+
         uint resultLength = end - offset;
         accounts = new AccountSummary[](resultLength);
 
@@ -166,19 +166,19 @@ library AccountLibrary {
     ) internal view returns (AccountSummary[] memory accounts, uint total) {
         EnumerableSet.Bytes32Set storage providerKeys = map._providerIndex[provider];
         total = providerKeys.length();
-        
+
         if (offset >= total) {
             return (new AccountSummary[](0), total);
         }
-        
+
         uint end = limit == 0 ? total : offset + limit;
         if (end > total) {
             end = total;
         }
-        
+
         uint resultLen = end - offset;
         accounts = new AccountSummary[](resultLen);
-        
+
         for (uint i = 0; i < resultLen; i++) {
             bytes32 key = providerKeys.at(offset + i);
             Account storage fullAccount = map._values[key];
@@ -194,7 +194,7 @@ library AccountLibrary {
                 deliverablesCount: fullAccount.deliverablesCount
             });
         }
-        
+
         return (accounts, total);
     }
 
@@ -206,19 +206,19 @@ library AccountLibrary {
     ) internal view returns (AccountSummary[] memory accounts, uint total) {
         EnumerableSet.Bytes32Set storage userKeys = map._userIndex[user];
         total = userKeys.length();
-        
+
         if (offset >= total) {
             return (new AccountSummary[](0), total);
         }
-        
+
         uint end = limit == 0 ? total : offset + limit;
         if (end > total) {
             end = total;
         }
-        
+
         uint resultLen = end - offset;
         accounts = new AccountSummary[](resultLen);
-        
+
         for (uint i = 0; i < resultLen; i++) {
             bytes32 key = userKeys.at(offset + i);
             Account storage fullAccount = map._values[key];
@@ -234,7 +234,7 @@ library AccountLibrary {
                 deliverablesCount: fullAccount.deliverablesCount
             });
         }
-        
+
         return (accounts, total);
     }
 
@@ -245,7 +245,7 @@ library AccountLibrary {
     ) internal view returns (AccountSummary[] memory accounts) {
         require(users.length <= 500, "Batch size too large (max 500)");
         accounts = new AccountSummary[](users.length);
-        
+
         for (uint i = 0; i < users.length; i++) {
             bytes32 key = _key(users[i], provider);
             if (_contains(map, key)) {
@@ -285,12 +285,12 @@ library AccountLibrary {
         if (_contains(map, key)) {
             revert AccountExists(user, provider);
         }
-        
+
         _set(map, key, user, provider, amount, additionalInfo);
-        
+
         map._providerIndex[provider].add(key);
         map._userIndex[user].add(key);
-        
+
         return (amount, 0);
     }
 
@@ -299,7 +299,7 @@ library AccountLibrary {
         if (!_contains(map, key)) {
             return;
         }
-        
+
         map._providerIndex[provider].remove(key);
         map._userIndex[user].remove(key);
         map._keys.remove(key);
@@ -318,12 +318,12 @@ library AccountLibrary {
         if (cancelRetrievingAmount > 0 && account.refunds.length > 0) {
             uint remainingCancel = cancelRetrievingAmount;
             uint newPendingRefund = account.pendingRefund;
-            
+
             // Process refunds in-place to avoid memory allocation
             uint writeIndex = 0;
             for (uint i = 0; i < account.refunds.length; i++) {
                 Refund storage refund = account.refunds[i];
-                
+
                 if (refund.processed) {
                     continue;
                 }
@@ -337,7 +337,7 @@ library AccountLibrary {
                     newPendingRefund -= remainingCancel;
                     remainingCancel = 0;
                 }
-                
+
                 // Keep unprocessed refunds
                 if (!refund.processed && i != writeIndex) {
                     account.refunds[writeIndex] = refund;
@@ -347,15 +347,15 @@ library AccountLibrary {
                     writeIndex++;
                 }
             }
-            
+
             // Update validRefundsLength after cancelling refunds
             account.validRefundsLength = writeIndex;
-            
+
             // Cleanup if needed
             if (writeIndex < account.refunds.length) {
                 _cleanupRefunds(account, writeIndex);
             }
-            
+
             account.pendingRefund = newPendingRefund;
         }
 
@@ -373,12 +373,12 @@ library AccountLibrary {
         if ((account.balance - account.pendingRefund) < amount) {
             revert InsufficientBalance(user, provider);
         }
-        
+
         // Check refund limit using validRefundsLength
         if (account.validRefundsLength >= MAX_REFUNDS_PER_ACCOUNT) {
             revert TooManyRefunds(user, provider);
         }
-        
+
         uint newIndex;
         if (account.validRefundsLength < account.refunds.length) {
             // Reuse dirty position (saves ~15,000 gas)
@@ -389,7 +389,7 @@ library AccountLibrary {
             newIndex = account.refunds.length;
             account.refunds.push(Refund(newIndex, amount, block.timestamp, false));
         }
-        
+
         account.validRefundsLength++;
         account.pendingRefund += amount;
         return newIndex;
@@ -401,12 +401,12 @@ library AccountLibrary {
         if (amount == 0) {
             return;
         }
-        
+
         // Check refund limit using validRefundsLength
         if (account.validRefundsLength >= MAX_REFUNDS_PER_ACCOUNT) {
             revert TooManyRefunds(user, provider);
         }
-        
+
         uint newIndex;
         if (account.validRefundsLength < account.refunds.length) {
             // Reuse dirty position (saves ~15,000 gas)
@@ -417,7 +417,7 @@ library AccountLibrary {
             newIndex = account.refunds.length;
             account.refunds.push(Refund(newIndex, amount, block.timestamp, false));
         }
-        
+
         account.validRefundsLength++;
         account.pendingRefund += amount;
     }
@@ -429,7 +429,7 @@ library AccountLibrary {
         uint lockTime
     ) internal returns (uint totalAmount, uint balance, uint pendingRefund) {
         Account storage account = _get(map, user, provider);
-        
+
         if (account.refunds.length == 0) {
             return (0, account.balance, account.pendingRefund);
         }
@@ -442,7 +442,7 @@ library AccountLibrary {
         // Process refunds in-place
         for (uint i = 0; i < account.refunds.length; i++) {
             Refund storage refund = account.refunds[i];
-            
+
             if (refund.processed) {
                 continue;
             }
@@ -463,11 +463,11 @@ library AccountLibrary {
 
         // Update valid refunds length
         account.validRefundsLength = writeIndex;
-        
+
         // Clean up or mark dirty data
         if (writeIndex < account.refunds.length) {
             uint dirtyCount = account.refunds.length - writeIndex;
-            
+
             if (dirtyCount >= REFUND_CLEANUP_THRESHOLD) {
                 // Many dirty entries: physical cleanup is more efficient
                 _cleanupRefunds(account, writeIndex);
@@ -478,7 +478,7 @@ library AccountLibrary {
                 }
             }
         }
-        
+
         account.balance -= totalAmount;
         account.pendingRefund = pendingRefund;
         balance = account.balance;
@@ -497,17 +497,22 @@ library AccountLibrary {
         account.providerSigner = providerSigner;
     }
 
-    function acknowledgeDeliverable(AccountMap storage map, address user, address provider, string calldata id) internal {
+    function acknowledgeDeliverable(
+        AccountMap storage map,
+        address user,
+        address provider,
+        string calldata id
+    ) internal {
         if (!_contains(map, _key(user, provider))) {
             revert AccountNotExists(user, provider);
         }
         Account storage account = _get(map, user, provider);
-        
+
         // Check if deliverable exists
         if (bytes(account.deliverables[id].id).length == 0) {
             revert("Deliverable does not exist");
         }
-        
+
         // Mark as acknowledged
         account.deliverables[id].acknowledged = true;
     }
@@ -525,12 +530,12 @@ library AccountLibrary {
             revert AccountNotExists(user, provider);
         }
         Account storage account = _get(map, user, provider);
-        
+
         // Check if ID already exists
         if (bytes(account.deliverables[id].id).length != 0) {
             revert("Deliverable ID already exists");
         }
-        
+
         // Create new deliverable
         Deliverable memory deliverable = Deliverable({
             id: id,
@@ -539,7 +544,7 @@ library AccountLibrary {
             acknowledged: false,
             timestamp: block.timestamp
         });
-        
+
         if (account.deliverablesCount < MAX_DELIVERABLES_PER_ACCOUNT) {
             // Array not full, add to next available position
             account.deliverableIds[account.deliverablesCount] = id;
@@ -547,12 +552,12 @@ library AccountLibrary {
         } else {
             // Array is full, remove oldest and add new one
             string memory oldestId = account.deliverableIds[account.deliverablesHead];
-            delete account.deliverables[oldestId];  // Remove from mapping
-            
-            account.deliverableIds[account.deliverablesHead] = id;  // Overwrite with new ID
+            delete account.deliverables[oldestId]; // Remove from mapping
+
+            account.deliverableIds[account.deliverablesHead] = id; // Overwrite with new ID
             account.deliverablesHead = (account.deliverablesHead + 1) % MAX_DELIVERABLES_PER_ACCOUNT;
         }
-        
+
         // Add to mapping
         account.deliverables[id] = deliverable;
     }
@@ -579,13 +584,13 @@ library AccountLibrary {
     ) internal view returns (string[] memory ids) {
         Account storage account = _get(map, user, provider);
         uint count = account.deliverablesCount;
-        
+
         if (count == 0) {
             return new string[](0);
         }
-        
+
         ids = new string[](count);
-        
+
         if (count < MAX_DELIVERABLES_PER_ACCOUNT) {
             // Array not full yet, deliverables are in chronological order from index 0
             for (uint i = 0; i < count; i++) {
@@ -599,7 +604,7 @@ library AccountLibrary {
                 ids[i] = account.deliverableIds[sourceIndex];
             }
         }
-        
+
         return ids;
     }
 
@@ -611,15 +616,14 @@ library AccountLibrary {
     ) internal view returns (Deliverable[] memory deliverables) {
         string[] memory ids = getDeliverableIds(map, user, provider);
         deliverables = new Deliverable[](ids.length);
-        
+
         Account storage account = _get(map, user, provider);
         for (uint i = 0; i < ids.length; i++) {
             deliverables[i] = account.deliverables[ids[i]];
         }
-        
+
         return deliverables;
     }
-
 
     // Helper functions
 
@@ -668,9 +672,9 @@ library AccountLibrary {
         account.user = user;
         account.provider = provider;
         account.additionalInfo = additionalInfo;
-        account.validRefundsLength = 0;  // Initialize validRefundsLength
-        account.deliverablesHead = 0;    // Initialize circular array head
-        account.deliverablesCount = 0;   // Initialize deliverable count
+        account.validRefundsLength = 0; // Initialize validRefundsLength
+        account.deliverablesHead = 0; // Initialize circular array head
+        account.deliverablesCount = 0; // Initialize deliverable count
         map._keys.add(key);
     }
 

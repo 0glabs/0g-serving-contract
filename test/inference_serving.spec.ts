@@ -6,14 +6,14 @@ import { Block, TransactionReceipt } from "ethers";
 import { deployments, ethers } from "hardhat";
 import { Deployment } from "hardhat-deploy/types";
 import { beforeEach } from "mocha";
-// Mock public key for testing - just a placeholder as ZK is no longer used
-const publicKey: [bigint, bigint] = [BigInt(1), BigInt(2)];
 import { InferenceServing as Serving, LedgerManager } from "../typechain-types";
 import {
     AccountStructOutput,
     ServiceStructOutput,
     TEESettlementDataStruct,
 } from "../typechain-types/contracts/inference/InferenceServing.sol/InferenceServing";
+// Mock public key for testing - just a placeholder as ZK is no longer used
+const publicKey: [bigint, bigint] = [BigInt(1), BigInt(2)];
 
 describe("Inference Serving", () => {
     let serving: Serving;
@@ -143,15 +143,15 @@ describe("Inference Serving", () => {
         it("should get accounts by provider", async () => {
             // Add another provider for testing
             await ledger.transferFund(provider2Address, "inference", ownerInitialInferenceBalance);
-            
+
             const [accounts1, total1] = await serving.getAccountsByProvider(provider1Address, 0, 0);
             const [accounts2, total2] = await serving.getAccountsByProvider(provider2Address, 0, 0);
-            
+
             expect(total1).to.equal(BigInt(2)); // owner and user1 with provider1
             expect(total2).to.equal(BigInt(1)); // only owner with provider2
             expect(accounts1.length).to.equal(2);
             expect(accounts2.length).to.equal(1);
-            
+
             const provider1Users = accounts1.map((a) => a.user);
             const provider2Users = accounts2.map((a) => a.user);
             expect(provider1Users).to.have.members([ownerAddress, user1Address]);
@@ -160,14 +160,14 @@ describe("Inference Serving", () => {
 
         it("should get accounts by provider with pagination", async () => {
             const [accounts, total] = await serving.getAccountsByProvider(provider1Address, 0, 1);
-            
+
             expect(total).to.equal(BigInt(2));
             expect(accounts.length).to.equal(1);
-            
+
             const [accounts2, total2] = await serving.getAccountsByProvider(provider1Address, 1, 1);
             expect(total2).to.equal(BigInt(2));
             expect(accounts2.length).to.equal(1);
-            
+
             // Check that we get different accounts
             expect(accounts[0].user).to.not.equal(accounts2[0].user);
         });
@@ -175,15 +175,15 @@ describe("Inference Serving", () => {
         it("should get accounts by user", async () => {
             // Add another provider for testing
             await ledger.transferFund(provider2Address, "inference", ownerInitialInferenceBalance);
-            
+
             const [ownerAccounts, ownerTotal] = await serving.getAccountsByUser(ownerAddress, 0, 0);
             const [user1Accounts, user1Total] = await serving.getAccountsByUser(user1Address, 0, 0);
-            
+
             expect(ownerTotal).to.equal(BigInt(2)); // owner with provider1 and provider2
             expect(user1Total).to.equal(BigInt(1)); // user1 only with provider1
             expect(ownerAccounts.length).to.equal(2);
             expect(user1Accounts.length).to.equal(1);
-            
+
             const ownerProviders = ownerAccounts.map((a) => a.provider);
             const user1Providers = user1Accounts.map((a) => a.provider);
             expect(ownerProviders).to.have.members([provider1Address, provider2Address]);
@@ -192,7 +192,7 @@ describe("Inference Serving", () => {
 
         it("should get batch accounts by users", async () => {
             const accounts = await serving.connect(provider1).getBatchAccountsByUsers([ownerAddress, user1Address]);
-            
+
             expect(accounts.length).to.equal(2);
             expect(accounts[0].user).to.equal(ownerAddress);
             expect(accounts[1].user).to.equal(user1Address);
@@ -202,8 +202,10 @@ describe("Inference Serving", () => {
 
         it("should handle batch accounts with non-existent users", async () => {
             const nonExistentUser = ethers.Wallet.createRandom().address;
-            const accounts = await serving.connect(provider1).getBatchAccountsByUsers([ownerAddress, nonExistentUser, user1Address]);
-            
+            const accounts = await serving
+                .connect(provider1)
+                .getBatchAccountsByUsers([ownerAddress, nonExistentUser, user1Address]);
+
             expect(accounts.length).to.equal(3);
             expect(accounts[0].user).to.equal(ownerAddress);
             expect(accounts[1].user).to.equal("0x0000000000000000000000000000000000000000"); // non-existent should be zero
@@ -239,7 +241,7 @@ describe("Inference Serving", () => {
     describe("Refund Array Optimization", () => {
         // Constants from AccountLibrary contract
         const MAX_REFUNDS_PER_ACCOUNT = 30;
-        
+
         beforeEach(async () => {
             // Setup: Transfer funds to ensure we have a clean test account
             // After setup: balance=1000 (500 from previous + 500 new), pendingRefund=0, refunds=[], validRefundsLength=0
@@ -251,23 +253,23 @@ describe("Inference Serving", () => {
             // Before: balance=1000, pendingRefund=0, refunds=[], validRefundsLength=0
             await ledger.connect(user1).retrieveFund([provider1Address], "inference");
             // After: balance=1000, pendingRefund=1000, refunds=[{amount:1000, processed:false}], validRefundsLength=1
-            
+
             let account = await serving.getAccount(user1Address, provider1);
             const initialBalance = Number(account.balance);
             const initialPendingRefund = Number(account.pendingRefund);
             expect(account.refunds.length).to.equal(1);
             expect(initialPendingRefund).to.equal(initialBalance); // pendingRefund should equal balance after retrieveFund
-            
+
             // Step 2: Process refund after lock time
             // Before: refunds=[{amount:1000, processed:false}], validRefundsLength=1
             await time.increase(lockTime + 1);
             await ledger.connect(user1).retrieveFund([provider1Address], "inference");
             // After: balance=0, pendingRefund=0, refunds=[{amount:1000, processed:true}], validRefundsLength=0 (dirty data in position 0)
-            
+
             account = await serving.getAccount(user1Address, provider1);
             expect(Number(account.balance)).to.equal(0);
             expect(Number(account.pendingRefund)).to.equal(0);
-            
+
             // Step 3: Transfer more funds and create new refund - should reuse position 0
             // Before: balance=0, refunds=[dirty_data], validRefundsLength=0
             const newTransferAmount = 300;
@@ -276,11 +278,11 @@ describe("Inference Serving", () => {
             account = await serving.getAccount(user1Address, provider1);
             expect(Number(account.balance)).to.equal(300);
             expect(Number(account.pendingRefund)).to.equal(0);
-            
+
             await ledger.connect(user1).retrieveFund([provider1Address], "inference");
             // After new refund: balance=300, pendingRefund=300, refunds=[{amount:300, processed:false}], validRefundsLength=1
             // Key optimization: Position 0 is REUSED, avoiding array.push() and saving ~15,000 gas
-            
+
             account = await serving.getAccount(user1Address, provider1);
             // Array length should remain 1 (reusing processed position)
             expect(account.refunds.length).to.equal(1);
@@ -292,17 +294,17 @@ describe("Inference Serving", () => {
             // Step 1: Create initial refund
             await ledger.connect(user1).retrieveFund([provider1Address], "inference");
             // After: balance=1000, pendingRefund=1000, refunds=[{amount:1000, processed:false}], validRefundsLength=1
-            
+
             let account = await serving.getAccount(user1Address, provider1);
             const initialPendingRefund = Number(account.pendingRefund);
             const initialBalance = Number(account.balance);
             // State snapshot: pendingRefund should equal balance after retrieveFund
             expect(initialPendingRefund).to.equal(initialBalance);
-            
+
             // Step 2: Transfer more funds - should automatically cancel some pending refunds
             const newTransferAmount = 300;
             await ledger.connect(user1).transferFund(provider1Address, "inference", newTransferAmount);
-            
+
             account = await serving.getAccount(user1Address, provider1);
             expect(Number(account.balance)).to.equal(1000);
             const cancelledAmount = Math.min(300, initialPendingRefund);
@@ -311,64 +313,64 @@ describe("Inference Serving", () => {
 
         it("should create multiple dirty data entries and demonstrate cleanup threshold", async () => {
             // Strategy: Create multiple refunds through partial cancellation, then process them
-            
+
             // Step 1: Create a large refund
             await ledger.connect(user1).retrieveFund([provider1Address], "inference");
-            
+
             let account = await serving.getAccount(user1Address, provider1);
             expect(account.refunds.length).to.equal(1);
             expect(Number(account.pendingRefund)).to.equal(1000);
             // After: refunds=[{amount:1000, processed:false}], validRefundsLength=1
-            
+
             // Step 2: Use partial cancellation to split the refund into smaller pieces
             await ledger.connect(user1).transferFund(provider1Address, "inference", 10);
             // After: refunds=[{amount:990, processed:false}], validRefundsLength=1
-            
+
             // Now request another refund for the new balance
             await ledger.connect(user1).retrieveFund([provider1Address], "inference");
             // After: refunds=[{amount:990, processed:false}, {amount:10, processed:false}], validRefundsLength=2
-            
+
             account = await serving.getAccount(user1Address, provider1);
-            console.log(`After partial cancellation and new refund: refunds.length=${account.refunds.length}, pendingRefund=${Number(account.pendingRefund)}`);
-            
+            console.log(
+                `After partial cancellation and new refund: refunds.length=${
+                    account.refunds.length
+                }, pendingRefund=${Number(account.pendingRefund)}`
+            );
+
             // Step 3: Repeat the pattern to create more refunds
             // The key insight: each transferFund + retrieveFund cycle may create new refund entries
-            
+
             while (account.refunds.length < MAX_REFUNDS_PER_ACCOUNT) {
                 // Small transfer and refund to potentially create new entries
                 await ledger.connect(user1).transferFund(provider1Address, "inference", 10);
                 await ledger.connect(user1).retrieveFund([provider1Address], "inference");
-                
+
                 account = await serving.getAccount(user1Address, provider1);
-                
+
                 if (account.refunds.length == MAX_REFUNDS_PER_ACCOUNT) {
                     account = await serving.getAccount(user1Address, provider1);
                     expect(account.refunds.length).to.equal(MAX_REFUNDS_PER_ACCOUNT);
-                    
+
                     // Now try to add one more refund - this should fail with TooManyRefunds error
                     await ledger.connect(user1).transferFund(provider1Address, "inference", 10);
-                    await expect(
-                        ledger.connect(user1).retrieveFund([provider1Address], "inference")
-                    ).to.be.revertedWithCustomError(serving, "TooManyRefunds")
+                    await expect(ledger.connect(user1).retrieveFund([provider1Address], "inference"))
+                        .to.be.revertedWithCustomError(serving, "TooManyRefunds")
                         .withArgs(user1Address, provider1Address);
-                    
-                    console.log(`Reached MAX_REFUNDS_PER_ACCOUNT: ${account.refunds.length}`);
-                    }
 
+                    console.log(`Reached MAX_REFUNDS_PER_ACCOUNT: ${account.refunds.length}`);
+                }
             }
-            
+
             // Step 4: Process all refunds to create dirty data
             await time.increase(lockTime + 1);
             await ledger.connect(user1).retrieveFund([provider1Address], "inference");
-            
+
             account = await serving.getAccount(user1Address, provider1);
-            
+
             // Verify cleanup was triggered since we had MAX_REFUNDS_PER_ACCOUNT dirty entries > REFUND_CLEANUP_THRESHOLD.
             // Physical cleanup should have occurred, reducing from MAX_REFUNDS_PER_ACCOUNT to 1 (left one since retrieveFund adds one fund while processing other refunds)
             expect(account.refunds.length).to.be.equal(1);
-            
         });
-
     });
 
     describe("Service provider", () => {
@@ -461,21 +463,21 @@ describe("Inference Serving", () => {
     describe("TEE Settlement", () => {
         const testFee = 50;
         const testRequestsHash = ethers.keccak256(ethers.toUtf8Bytes("test_requests_hash"));
-        
+
         // Create a separate wallet for TEE signing
         const teePrivateKey = "0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d";
         const teeWallet = new ethers.Wallet(teePrivateKey);
         const teeSignerAddress = teeWallet.address;
-        
+
         beforeEach(async () => {
             // Acknowledge TEE signer for both users - using a dedicated TEE signer
             await serving.connect(owner).acknowledgeTEESigner(provider1Address, teeSignerAddress);
             await serving.connect(user1).acknowledgeTEESigner(provider1Address, teeSignerAddress);
         });
-        
+
         async function createValidTEESettlement(
             user: string,
-            provider: string, 
+            provider: string,
             totalFee: bigint,
             requestsHash: string,
             nonce: bigint
@@ -485,20 +487,20 @@ describe("Inference Serving", () => {
                 ["bytes32", "uint256", "address", "address", "uint256"],
                 [requestsHash, nonce, provider, user, totalFee]
             );
-            
+
             // Sign using the exact same approach as fine_tuning_serving.spec.ts backfillVerifierInput
             const signature = await teeWallet.signMessage(ethers.toBeArray(messageHash));
-            
+
             return {
                 user,
                 provider,
                 totalFee,
                 requestsHash,
                 nonce,
-                signature
+                signature,
             };
         }
-        
+
         it("should succeed with valid TEE settlement", async () => {
             const nonce = BigInt(Date.now());
             const settlement = await createValidTEESettlement(
@@ -511,24 +513,22 @@ describe("Inference Serving", () => {
 
             // Get initial balance
             const initialBalance = await serving.getAccount(ownerAddress, provider1Address);
-            
+
             // Execute settlement and verify success
             await expect(serving.connect(provider1).settleFeesWithTEE([settlement]))
                 .to.emit(serving, "TEESettlementCompleted")
                 .withArgs(provider1Address, 1, 0); // 1 success, 0 failures
-            
+
             // Verify balance was deducted
             const finalBalance = await serving.getAccount(ownerAddress, provider1Address);
             expect(finalBalance.balance).to.equal(initialBalance.balance - BigInt(testFee));
             expect(finalBalance.nonce).to.equal(nonce);
         });
 
-
-
         it("should handle multiple settlements in batch", async () => {
             const nonce1 = BigInt(Date.now());
             const nonce2 = nonce1 + BigInt(1);
-            
+
             const settlement1 = await createValidTEESettlement(
                 ownerAddress,
                 provider1Address,
@@ -548,12 +548,12 @@ describe("Inference Serving", () => {
             // Get initial balances
             const initialBalance1 = await serving.getAccount(ownerAddress, provider1Address);
             const initialBalance2 = await serving.getAccount(user1Address, provider1Address);
-            
+
             // Execute batch settlement - both should succeed
             await expect(serving.connect(provider1).settleFeesWithTEE([settlement1, settlement2]))
                 .to.emit(serving, "TEESettlementCompleted")
                 .withArgs(provider1Address, 2, 0); // 2 successes, 0 failures
-            
+
             // Verify both balances were deducted
             const finalBalance1 = await serving.getAccount(ownerAddress, provider1Address);
             const finalBalance2 = await serving.getAccount(user1Address, provider1Address);
@@ -564,7 +564,7 @@ describe("Inference Serving", () => {
         it("should handle insufficient balance gracefully", async () => {
             const excessiveFee = ownerInitialInferenceBalance + 1000;
             const nonce = BigInt(Date.now());
-            
+
             const settlement = await createValidTEESettlement(
                 ownerAddress,
                 provider1Address,
@@ -582,7 +582,7 @@ describe("Inference Serving", () => {
                 .withArgs(provider1Address, 0, 1) // 0 successes, 1 failure
                 .and.to.emit(serving, "TEESettlementFailed")
                 .withArgs(provider1Address, ownerAddress, "Insufficient balance");
-            
+
             // Verify balance unchanged (settlement failed)
             const finalBalance = await serving.getAccount(ownerAddress, provider1Address);
             expect(finalBalance.balance).to.equal(initialBalance.balance);
@@ -592,7 +592,7 @@ describe("Inference Serving", () => {
         it("should handle mixed success and failure in batch settlement", async () => {
             const nonce1 = BigInt(Date.now());
             const nonce2 = nonce1 + BigInt(1);
-            
+
             // Create settlement with sufficient balance (should potentially succeed)
             const potentialSuccessSettlement = await createValidTEESettlement(
                 user1Address,
@@ -615,14 +615,16 @@ describe("Inference Serving", () => {
             // Get initial balances
             const initialBalance1 = await serving.getAccount(user1Address, provider1Address);
             const initialBalance2 = await serving.getAccount(ownerAddress, provider1Address);
-            
+
             // Execute mixed batch - one success, one failure
-            await expect(serving.connect(provider1).settleFeesWithTEE([potentialSuccessSettlement, definiteFailSettlement]))
+            await expect(
+                serving.connect(provider1).settleFeesWithTEE([potentialSuccessSettlement, definiteFailSettlement])
+            )
                 .to.emit(serving, "TEESettlementCompleted")
                 .withArgs(provider1Address, 1, 1) // 1 success, 1 failure
                 .and.to.emit(serving, "TEESettlementFailed")
                 .withArgs(provider1Address, ownerAddress, "Insufficient balance");
-            
+
             // Verify user1 succeeded (balance deducted), owner failed (balance unchanged)
             const finalBalance1 = await serving.getAccount(user1Address, provider1Address);
             const finalBalance2 = await serving.getAccount(ownerAddress, provider1Address);
@@ -637,7 +639,7 @@ describe("Inference Serving", () => {
                 totalFee: BigInt(testFee),
                 requestsHash: testRequestsHash,
                 nonce: BigInt(Date.now()),
-                signature: "0x" + "00".repeat(65) // Invalid mock signature
+                signature: "0x" + "00".repeat(65), // Invalid mock signature
             };
 
             // Get initial balance to verify it doesn't change after failed settlement
@@ -649,17 +651,16 @@ describe("Inference Serving", () => {
                 .withArgs(provider1Address, 0, 1) // 0 successes, 1 failure
                 .and.to.emit(serving, "TEESettlementFailed")
                 .withArgs(provider1Address, ownerAddress, anyValue);
-            
+
             // Verify balance unchanged (settlement failed)
             const finalBalance = await serving.getAccount(ownerAddress, provider1Address);
             expect(finalBalance.balance).to.equal(initialBalance.balance);
             expect(finalBalance.nonce).to.equal(initialBalance.nonce); // Nonce shouldn't update on failure
         });
 
-
         it("should prevent duplicate nonce usage", async () => {
             const nonce = BigInt(Date.now());
-            
+
             const settlement1 = await createValidTEESettlement(
                 ownerAddress,
                 provider1Address,
@@ -670,12 +671,12 @@ describe("Inference Serving", () => {
 
             // Get initial balance
             const initialBalance = await serving.getAccount(ownerAddress, provider1Address);
-            
+
             // First settlement should succeed
             await expect(serving.connect(provider1).settleFeesWithTEE([settlement1]))
                 .to.emit(serving, "TEESettlementCompleted")
                 .withArgs(provider1Address, 1, 0); // 1 success, 0 failures
-            
+
             // Verify first settlement succeeded
             const balanceAfterFirst = await serving.getAccount(ownerAddress, provider1Address);
             expect(balanceAfterFirst.balance).to.equal(initialBalance.balance - BigInt(testFee));
@@ -696,20 +697,21 @@ describe("Inference Serving", () => {
                 .withArgs(provider1Address, 0, 1) // 0 successes, 1 failure
                 .and.to.emit(serving, "TEESettlementFailed")
                 .withArgs(provider1Address, ownerAddress, "Nonce already processed");
-            
+
             // Verify balance unchanged after failed second settlement
             const finalBalance = await serving.getAccount(ownerAddress, provider1Address);
             expect(finalBalance.balance).to.equal(balanceAfterFirst.balance);
         });
 
         it("should revert with empty settlements array", async () => {
-            await expect(serving.connect(provider1).settleFeesWithTEE([]))
-                .to.be.revertedWith("No settlements provided");
+            await expect(serving.connect(provider1).settleFeesWithTEE([])).to.be.revertedWith(
+                "No settlements provided"
+            );
         });
 
         it("should handle provider mismatch", async () => {
             const nonce = BigInt(Date.now());
-            
+
             const settlement = await createValidTEESettlement(
                 ownerAddress,
                 provider2Address, // Different provider than the one calling
@@ -727,7 +729,7 @@ describe("Inference Serving", () => {
                 .withArgs(provider1Address, 0, 1) // 0 successes, 1 failure
                 .and.to.emit(serving, "TEESettlementFailed")
                 .withArgs(provider1Address, ownerAddress, "Provider mismatch");
-            
+
             // Verify balance unchanged with provider1 (settlement failed)
             const finalBalance = await serving.getAccount(ownerAddress, provider1Address);
             expect(finalBalance.balance).to.equal(initialBalance.balance);

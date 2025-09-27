@@ -1,10 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.0;
 
-
-
 struct VerifierInput {
-    string id;   // Changed from bytes32 to string
+    string id; // Changed from bytes32 to string
     bytes encryptedSecret;
     bytes modelRootHash;
     uint nonce;

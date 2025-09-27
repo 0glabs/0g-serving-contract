@@ -86,7 +86,7 @@ contract FineTuningServing is Ownable, Initializable, IServing {
 
     function getAccountsByProvider(
         address provider,
-        uint offset, 
+        uint offset,
         uint limit
     ) public view returns (AccountSummary[] memory accounts, uint total) {
         require(limit == 0 || limit <= 50, "Limit too large");
@@ -95,7 +95,7 @@ contract FineTuningServing is Ownable, Initializable, IServing {
 
     function getAccountsByUser(
         address user,
-        uint offset, 
+        uint offset,
         uint limit
     ) public view returns (AccountSummary[] memory accounts, uint total) {
         require(limit == 0 || limit <= 50, "Limit too large");
@@ -185,7 +185,11 @@ contract FineTuningServing is Ownable, Initializable, IServing {
         accountMap.addDeliverable(user, msg.sender, id, modelRootHash);
     }
 
-    function getDeliverable(address user, address provider, string calldata id) public view returns (Deliverable memory) {
+    function getDeliverable(
+        address user,
+        address provider,
+        string calldata id
+    ) public view returns (Deliverable memory) {
         return accountMap.getDeliverable(user, provider, id);
     }
 
@@ -199,7 +203,7 @@ contract FineTuningServing is Ownable, Initializable, IServing {
 
     function settleFees(VerifierInput calldata verifierInput) external {
         Account storage account = accountMap.getAccount(verifierInput.user, msg.sender);
-        
+
         // Group all validation checks together for gas efficiency
         if (account.providerSigner != verifierInput.providerSigner) {
             revert InvalidVerifierInput("provider signing address is not acknowledged");
@@ -210,7 +214,7 @@ contract FineTuningServing is Ownable, Initializable, IServing {
         if (account.balance < verifierInput.taskFee) {
             revert InvalidVerifierInput("insufficient balance");
         }
-        
+
         // Validate deliverable exists
         if (bytes(account.deliverables[verifierInput.id].id).length == 0) {
             revert("Deliverable does not exist");
@@ -219,7 +223,7 @@ contract FineTuningServing is Ownable, Initializable, IServing {
         if (keccak256(deliverable.modelRootHash) != keccak256(verifierInput.modelRootHash)) {
             revert InvalidVerifierInput("model root hash mismatch");
         }
-        
+
         // Verify TEE signature
         bool teePassed = verifierInput.verifySignature(account.providerSigner);
         if (!teePassed) {
@@ -241,7 +245,7 @@ contract FineTuningServing is Ownable, Initializable, IServing {
 
     function _settleFees(Account storage account, uint amount) private {
         uint availableBalance = account.balance - account.pendingRefund;
-        
+
         if (amount > availableBalance) {
             uint remainingFee = amount - availableBalance;
             if (account.pendingRefund < remainingFee) {
@@ -249,7 +253,7 @@ contract FineTuningServing is Ownable, Initializable, IServing {
             }
 
             account.pendingRefund -= remainingFee;
-            
+
             // Optimized: Process from the end with early exit
             uint refundsLength = account.refunds.length;
             for (uint i = refundsLength; i > 0 && remainingFee > 0; i--) {
@@ -269,7 +273,7 @@ contract FineTuningServing is Ownable, Initializable, IServing {
                 }
             }
         }
-        
+
         account.balance -= amount;
         ledger.spendFund(account.user, amount);
         emit BalanceUpdated(account.user, msg.sender, account.balance, account.pendingRefund);

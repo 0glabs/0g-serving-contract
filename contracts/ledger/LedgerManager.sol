@@ -23,13 +23,18 @@ interface ILedger {
 
 interface IServing {
     function accountExists(address user, address provider) external view returns (bool);
+
     function getPendingRefund(address user, address provider) external view returns (uint);
+
     function depositFund(address user, address provider, uint cancelRetrievingAmount) external payable;
+
     function requestRefundAll(address user, address provider) external;
+
     function processRefund(
         address user,
         address provider
     ) external returns (uint totalAmount, uint balance, uint pendingRefund);
+
     function deleteAccount(address user, address provider) external;
 }
 
@@ -44,7 +49,7 @@ contract LedgerManager is Ownable, Initializable, ReentrancyGuard {
     mapping(address => EnumerableSet.AddressSet) private userFineTuningProviders;
     IServing private fineTuningAccount;
     IServing private inferenceAccount;
-    
+
     // Constants
     uint public constant MAX_PROVIDERS_PER_BATCH = 20;
 
@@ -96,16 +101,13 @@ contract LedgerManager is Ownable, Initializable, ReentrancyGuard {
         return _get(user);
     }
 
-    function getAllLedgers(
-        uint offset,
-        uint limit
-    ) public view returns (Ledger[] memory ledgers, uint total) {
+    function getAllLedgers(uint offset, uint limit) public view returns (Ledger[] memory ledgers, uint total) {
         total = _length();
-        
+
         if (offset >= total) {
             return (new Ledger[](0), total);
         }
-        
+
         uint end = limit == 0 ? total : Math.min(offset + limit, total);
         uint resultLen = end - offset;
         ledgers = new Ledger[](resultLen);
@@ -249,25 +251,25 @@ contract LedgerManager is Ownable, Initializable, ReentrancyGuard {
             }
         }
 
-        // Clear legacy arrays  
+        // Clear legacy arrays
         Ledger storage ledger = _get(msg.sender);
         delete ledger.inferenceProviders;
         delete ledger.fineTuningProviders;
-        
+
         // Delete main ledger
         ledgerMap._keys.remove(key);
         delete ledgerMap._values[key];
     }
 
     function _addProvider(address user, address provider, bool isInference) private {
-        EnumerableSet.AddressSet storage providers = isInference 
-            ? userInferenceProviders[user] 
+        EnumerableSet.AddressSet storage providers = isInference
+            ? userInferenceProviders[user]
             : userFineTuningProviders[user];
-        
+
         // Only add if not already exists
         if (!providers.contains(provider)) {
             providers.add(provider);
-            
+
             // Also update legacy array for backwards compatibility
             Ledger storage ledger = _get(user);
             if (isInference) {
