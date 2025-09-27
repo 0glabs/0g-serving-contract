@@ -76,7 +76,7 @@ const config: HardhatUserConfig = {
         zgTestnetV3: {
             url: "https://evmrpc-testnet.0g.ai",
             accounts: [ZG_TESTNET_V3_PRIVATE_KEY],
-            chainId: 16601,
+            chainId: 16602,
             gasPrice: 12000000000,
         },
     },
@@ -86,8 +86,8 @@ const config: HardhatUserConfig = {
         },
         customChains: [
             {
-                network: "zgTestnetV3",
-                chainId: 16601,
+                network: "zgTestnetV4",
+                chainId: 16602,
                 urls: {
                     apiURL: "https://chainscan-galileo.0g.ai/open/api",
                     browserURL: "https://chainscan-galileo.0g.ai",
@@ -97,8 +97,10 @@ const config: HardhatUserConfig = {
     },
     gasReporter: {
         currency: "Gwei",
-        gasPrice: 10,
-        enabled: false,
+        gasPrice: 12, // 匹配 0G 测试网价格
+        enabled: true,
+        outputFile: "gas-report.txt",
+        noColors: true,
     },
 };
 

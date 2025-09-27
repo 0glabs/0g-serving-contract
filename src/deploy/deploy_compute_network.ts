@@ -19,8 +19,7 @@ const deploy: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
 
     console.log(`initializing inference serving..`);
     if (!(await inferenceServing.initialized())) {
-        // Initialize without verifier address as ZK verification is no longer used
-        await (await inferenceServing.initialize(lockTime, "0x0000000000000000000000000000000000000000", ledgerManagerAddress, deployer)).wait();
+        await (await inferenceServing.initialize(lockTime, ledgerManagerAddress, deployer)).wait();
     }
 
     console.log(`initializing fine-tuning serving..`);

@@ -8,39 +8,23 @@ import "./InferenceAccount.sol";
 import "./InferenceService.sol";
 import "../ledger/LedgerManager.sol";
 
-// Legacy ZK structures - kept for storage compatibility
-struct VerifierInput {
-    uint[] inProof;
-    uint[] proofInputs;
-    uint numChunks;
-    uint[] segmentSize;
-}
 
 struct TEESettlementData {
     address user;
     address provider;
-    uint256 totalFee;
+    uint totalFee;
     bytes32 requestsHash;
-    uint256 nonce;
+    uint nonce;
     bytes signature;
 }
 
-interface IBatchVerifier {
-    function verifyBatch(
-        uint[] calldata inProof,
-        uint[] calldata proofInputs,
-        uint numProofs
-    ) external view returns (bool);
-}
 
 contract InferenceServing is Ownable, Initializable, IServing {
     using AccountLibrary for AccountLibrary.AccountMap;
     using ServiceLibrary for ServiceLibrary.ServiceMap;
 
     uint public lockTime;
-    address public batchVerifierAddress; // Legacy - kept for storage compatibility
     address public ledgerAddress;
-    IBatchVerifier private batchVerifier; // Legacy - kept for storage compatibility
     ILedger private ledger;
     AccountLibrary.AccountMap private accountMap;
     ServiceLibrary.ServiceMap private serviceMap;
@@ -61,21 +45,18 @@ contract InferenceServing is Ownable, Initializable, IServing {
     event TEESettlementCompleted(address indexed provider, uint successCount, uint failedCount);
     event TEESettlementFailed(address indexed provider, address indexed user, string reason);
 
-    error InvalidProofInputs(string reason); // Legacy - kept for compatibility
+    error InvalidProofInputs(string reason);
     error InvalidTEESignature(string reason);
 
     function initialize(
         uint _locktime,
-        address _batchVerifierAddress, // Legacy parameter - kept for compatibility
         address _ledgerAddress,
         address owner
     ) public onlyInitializeOnce {
         _transferOwnership(owner);
         lockTime = _locktime;
-        batchVerifierAddress = _batchVerifierAddress; // Set but not used
         ledgerAddress = _ledgerAddress;
         ledger = ILedger(ledgerAddress);
-        // batchVerifier no longer initialized as it's deprecated
     }
 
     modifier onlyLedger() {
@@ -87,18 +68,16 @@ contract InferenceServing is Ownable, Initializable, IServing {
         lockTime = _locktime;
     }
 
-    // Legacy function - kept for compatibility but deprecated
-    function updateBatchVerifierAddress(address _batchVerifierAddress) public onlyOwner {
-        batchVerifierAddress = _batchVerifierAddress;
-        // batchVerifier no longer used - function is deprecated
-    }
-
     function getAccount(address user, address provider) public view returns (Account memory) {
         return accountMap.getAccount(user, provider);
     }
 
-    function getAllAccounts() public view returns (Account[] memory) {
-        return accountMap.getAllAccounts();
+    function getAllAccounts(
+        uint offset,
+        uint limit
+    ) public view returns (Account[] memory accounts, uint total) {
+        require(limit == 0 || limit <= 50, "Limit too large");
+        return accountMap.getAllAccounts(offset, limit);
     }
 
     function getAccountsByProvider(
@@ -205,12 +184,7 @@ contract InferenceServing is Ownable, Initializable, IServing {
         emit ServiceRemoved(msg.sender);
     }
 
-    // DEPRECATED: ZK-based settlement function - kept for compatibility but disabled
-    function settleFees(VerifierInput calldata /* verifierInput */) external pure {
-        // This function is deprecated and disabled
-        // Use settleFeesWithTEE instead
-        revert InvalidProofInputs("ZK settlement is deprecated, use TEE settlement instead");
-    }
+ 
 
     function _settleFees(Account storage account, uint amount) private {
         if (amount > (account.balance - account.pendingRefund)) {

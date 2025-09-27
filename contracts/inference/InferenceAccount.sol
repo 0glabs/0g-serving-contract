@@ -14,6 +14,7 @@ struct Account {
     string additionalInfo;
     uint[2] providerPubKey;
     address teeSignerAddress;  // TEE ECDSA signer address for settlement verification
+    uint validRefundsLength;  // Track the number of valid (non-dirty) refunds
 }
 
 struct Refund {
@@ -25,6 +26,10 @@ struct Refund {
 
 library AccountLibrary {
     using EnumerableSet for EnumerableSet.Bytes32Set;
+    
+    // Constants for optimization
+    uint constant MAX_REFUNDS_PER_ACCOUNT = 30;
+    uint constant REFUND_CLEANUP_THRESHOLD = 15;
 
     error AccountNotExists(address user, address provider);
     error AccountExists(address user, address provider);
@@ -32,6 +37,7 @@ library AccountLibrary {
     error RefundInvalid(address user, address provider, uint index);
     error RefundProcessed(address user, address provider, uint index);
     error RefundLocked(address user, address provider, uint index);
+    error TooManyRefunds(address user, address provider);
 
     struct AccountMap {
         EnumerableSet.Bytes32Set _keys;
@@ -48,12 +54,27 @@ library AccountLibrary {
         return _get(map, user, provider);
     }
 
-    function getAllAccounts(AccountMap storage map) internal view returns (Account[] memory accounts) {
-        uint len = _length(map);
-        accounts = new Account[](len);
+    function getAllAccounts(
+        AccountMap storage map,
+        uint offset,
+        uint limit
+    ) internal view returns (Account[] memory accounts, uint total) {
+        total = _length(map);
         
-        for (uint i = 0; i < len; i++) {
-            accounts[i] = _at(map, i);
+        if (offset >= total) {
+            return (new Account[](0), total);
+        }
+        
+        uint end = offset + limit;
+        if (limit == 0 || end > total) {
+            end = total;
+        }
+        
+        uint resultLength = end - offset;
+        accounts = new Account[](resultLength);
+        
+        for (uint i = 0; i < resultLength; i++) {
+            accounts[i] = _at(map, offset + i);
         }
     }
 
@@ -210,52 +231,85 @@ library AccountLibrary {
     ) internal returns (uint, uint) {
         Account storage account = _get(map, user, provider);
 
-        if (cancelRetrievingAmount > 0) {
-            if (account.refunds.length > 0) {
-                Refund[] memory newRefunds = new Refund[](account.refunds.length);
-                uint newCount = 0;
-                uint remainingCancel = cancelRetrievingAmount;
-                uint newPendingRefund = 0;
-
-                for (uint i = 0; i < account.refunds.length; i++) {
-                    Refund storage refund = account.refunds[i];
-                    
-                    if (refund.processed) {
-                        continue;
-                    }
-
-                    if (remainingCancel >= refund.amount) {
-                        remainingCancel -= refund.amount;
-                    } else if (remainingCancel > 0) {
-                        uint remainingAmount = refund.amount - remainingCancel;
-                        newRefunds[newCount] = Refund({
-                            index: newCount,
-                            amount: remainingAmount,
-                            createdAt: refund.createdAt,
-                            processed: false
-                        });
-                        newPendingRefund += remainingAmount;
-                        newCount++;
-                        remainingCancel = 0;
-                    } else {
-                        newRefunds[newCount] = Refund({
-                            index: newCount,
-                            amount: refund.amount,
-                            createdAt: refund.createdAt,
-                            processed: refund.processed
-                        });
-                        newPendingRefund += refund.amount;
-                        newCount++;
-                    }
+        if (cancelRetrievingAmount > 0 && account.refunds.length > 0) {
+            uint remainingCancel = cancelRetrievingAmount;
+            uint newPendingRefund = account.pendingRefund;
+            
+            // Process refunds in-place to avoid memory allocation
+            uint writeIndex = 0;
+            for (uint i = 0; i < account.refunds.length; i++) {
+                Refund storage refund = account.refunds[i];
+                
+                if (refund.processed) {
+                    continue;
                 }
 
-                account.pendingRefund = newPendingRefund;
-                _rebuildRefundArray(account, newRefunds, newCount);
+                if (remainingCancel >= refund.amount) {
+                    remainingCancel -= refund.amount;
+                    newPendingRefund -= refund.amount;
+                    refund.processed = true; // Mark as processed instead of removing
+                } else if (remainingCancel > 0) {
+                    refund.amount -= remainingCancel;
+                    newPendingRefund -= remainingCancel;
+                    remainingCancel = 0;
+                }
+                
+                // Keep unprocessed refunds
+                if (!refund.processed && i != writeIndex) {
+                    account.refunds[writeIndex] = refund;
+                    account.refunds[writeIndex].index = writeIndex;
+                    writeIndex++;
+                } else if (!refund.processed) {
+                    writeIndex++;
+                }
             }
+            
+            // Update validRefundsLength after cancelling refunds
+            account.validRefundsLength = writeIndex;
+            
+            // Cleanup if needed
+            if (writeIndex < account.refunds.length) {
+                _cleanupRefunds(account, writeIndex);
+                account.validRefundsLength = account.refunds.length;  // Update after cleanup
+            }
+            
+            account.pendingRefund = newPendingRefund;
         }
 
         account.balance += amount;
         return (account.balance, account.pendingRefund);
+    }
+
+    function requestRefund(
+        AccountMap storage map,
+        address user,
+        address provider,
+        uint amount
+    ) internal returns (uint) {
+        Account storage account = _get(map, user, provider);
+        if ((account.balance - account.pendingRefund) < amount) {
+            revert InsufficientBalance(user, provider);
+        }
+        
+        // Check refund limit using validRefundsLength
+        if (account.validRefundsLength >= MAX_REFUNDS_PER_ACCOUNT) {
+            revert TooManyRefunds(user, provider);
+        }
+        
+        uint newIndex;
+        if (account.validRefundsLength < account.refunds.length) {
+            // Reuse dirty position (saves ~15,000 gas)
+            newIndex = account.validRefundsLength;
+            account.refunds[newIndex] = Refund(newIndex, amount, block.timestamp, false);
+        } else {
+            // Need to push new position
+            newIndex = account.refunds.length;
+            account.refunds.push(Refund(newIndex, amount, block.timestamp, false));
+        }
+        
+        account.validRefundsLength++;
+        account.pendingRefund += amount;
+        return newIndex;
     }
 
     function requestRefundAll(AccountMap storage map, address user, address provider) internal {
@@ -264,7 +318,24 @@ library AccountLibrary {
         if (amount == 0) {
             return;
         }
-        account.refunds.push(Refund(account.refunds.length, amount, block.timestamp, false));
+        
+        // Check refund limit using validRefundsLength
+        if (account.validRefundsLength >= MAX_REFUNDS_PER_ACCOUNT) {
+            revert TooManyRefunds(user, provider);
+        }
+        
+        uint newIndex;
+        if (account.validRefundsLength < account.refunds.length) {
+            // Reuse dirty position (saves ~15,000 gas)
+            newIndex = account.validRefundsLength;
+            account.refunds[newIndex] = Refund(newIndex, amount, block.timestamp, false);
+        } else {
+            // Need to push new position
+            newIndex = account.refunds.length;
+            account.refunds.push(Refund(newIndex, amount, block.timestamp, false));
+        }
+        
+        account.validRefundsLength++;
         account.pendingRefund += amount;
     }
 
@@ -277,36 +348,53 @@ library AccountLibrary {
         Account storage account = _get(map, user, provider);
         
         if (account.refunds.length == 0) {
-            totalAmount = 0;
-            pendingRefund = account.pendingRefund;
-        } else {
-            Refund[] memory newRefunds = new Refund[](account.refunds.length);
-            uint newCount = 0;
-            totalAmount = 0;
-            pendingRefund = 0;
+            return (0, account.balance, account.pendingRefund);
+        }
 
-            for (uint i = 0; i < account.refunds.length; i++) {
-                Refund storage refund = account.refunds[i];
-                
-                if (refund.processed) {
-                    continue;
-                }
+        totalAmount = 0;
+        pendingRefund = 0;
+        uint writeIndex = 0;
+        uint currentTime = block.timestamp;
 
-                if (block.timestamp >= refund.createdAt + lockTime) {
-                    totalAmount += refund.amount;
-                } else {
-                    newRefunds[newCount] = Refund({
-                        index: newCount,
-                        amount: refund.amount,
-                        createdAt: refund.createdAt,
-                        processed: false
-                    });
-                    pendingRefund += refund.amount;
-                    newCount++;
-                }
+        // Process refunds in-place
+        for (uint i = 0; i < account.refunds.length; i++) {
+            Refund storage refund = account.refunds[i];
+            
+            if (refund.processed) {
+                continue;
             }
 
-            _rebuildRefundArray(account, newRefunds, newCount);
+            if (currentTime >= refund.createdAt + lockTime) {
+                totalAmount += refund.amount;
+                refund.processed = true; // Mark as processed
+            } else {
+                pendingRefund += refund.amount;
+                // Keep unprocessed refunds
+                if (i != writeIndex) {
+                    account.refunds[writeIndex] = refund;
+                    account.refunds[writeIndex].index = writeIndex;
+                }
+                writeIndex++;
+            }
+        }
+
+        // Update valid refunds length
+        account.validRefundsLength = writeIndex;
+        
+        // Clean up or mark dirty data
+        if (writeIndex < account.refunds.length) {
+            uint dirtyCount = account.refunds.length - writeIndex;
+            
+            if (dirtyCount >= REFUND_CLEANUP_THRESHOLD) {
+                // Many dirty entries: physical cleanup is more efficient
+                _cleanupRefunds(account, writeIndex);
+                account.validRefundsLength = account.refunds.length;  // Update after cleanup
+            } else {
+                // Few dirty entries: mark as processed to prevent duplicate processing
+                for (uint i = writeIndex; i < account.refunds.length; i++) {
+                    account.refunds[i].processed = true;
+                }
+            }
         }
         
         account.balance -= totalAmount;
@@ -314,16 +402,15 @@ library AccountLibrary {
         balance = account.balance;
     }
 
-
-
-    function _rebuildRefundArray(Account storage account, Refund[] memory newRefunds, uint count) private {
-        delete account.refunds;
-        
-        for (uint i = 0; i < count; i++) {
-            account.refunds.push(newRefunds[i]);
+    
+    function _cleanupRefunds(Account storage account, uint keepCount) private {
+        // Resize array to remove processed refunds
+        uint currentLength = account.refunds.length;
+        for (uint i = currentLength; i > keepCount; i--) {
+            account.refunds.pop();
         }
     }
-
+    
     function _at(AccountMap storage map, uint index) internal view returns (Account storage) {
         bytes32 key = map._keys.at(index);
         return map._values[key];
@@ -360,6 +447,7 @@ library AccountLibrary {
         account.provider = provider;
         account.signer = signer;
         account.additionalInfo = additionalInfo;
+        account.validRefundsLength = 0;  // Initialize validRefundsLength
         map._keys.add(key);
     }
 

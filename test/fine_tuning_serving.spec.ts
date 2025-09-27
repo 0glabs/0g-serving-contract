@@ -142,7 +142,7 @@ describe("Fine tuning serving", () => {
         });
 
         it("should get all users", async () => {
-            const accounts = await serving.getAllAccounts();
+            const [accounts] = await serving.getAllAccounts(0, 0);
             const userAddresses = (accounts as AccountStructOutput[]).map((a) => a.user);
             const providerAddresses = (accounts as AccountStructOutput[]).map((a) => a.provider);
             const balances = (accounts as AccountStructOutput[]).map((a) => a.balance);
@@ -153,6 +153,33 @@ describe("Fine tuning serving", () => {
                 BigInt(ownerInitialFineTuningBalance),
                 BigInt(user1InitialFineTuningBalance),
             ]);
+        });
+
+        it("should support pagination in getAllAccounts", async () => {
+            const [allAccounts, total] = await serving.getAllAccounts(0, 0);
+            expect(total).to.equal(BigInt(2));
+            expect(allAccounts.length).to.equal(2);
+            
+            // Test pagination with limit
+            const [firstPage, total1] = await serving.getAllAccounts(0, 1);
+            expect(total1).to.equal(BigInt(2));
+            expect(firstPage.length).to.equal(1);
+            
+            const [secondPage, total2] = await serving.getAllAccounts(1, 1);
+            expect(total2).to.equal(BigInt(2));
+            expect(secondPage.length).to.equal(1);
+            
+            // Verify different accounts in each page
+            expect(firstPage[0].user).to.not.equal(secondPage[0].user);
+            
+            // Test offset beyond bounds
+            const [emptyPage, total3] = await serving.getAllAccounts(10, 1);
+            expect(total3).to.equal(BigInt(2));
+            expect(emptyPage.length).to.equal(0);
+        });
+
+        it("should enforce pagination limits", async () => {
+            await expect(serving.getAllAccounts(0, 51)).to.be.revertedWith("Limit too large");
         });
 
         it("should get accounts by provider", async () => {
@@ -249,6 +276,148 @@ describe("Fine tuning serving", () => {
             const account = await serving.getAccount(ownerAddress, provider1);
             expect(account.balance).to.be.equal(BigInt(0));
         });
+    });
+
+    describe("Refund Array Optimization", () => {
+        // Constants from AccountLibrary contract
+        const MAX_REFUNDS_PER_ACCOUNT = 30;
+        
+        beforeEach(async () => {
+            // Setup: Transfer funds to ensure we have a clean test account
+            // After setup: balance=1000 (500 from previous + 500 new), pendingRefund=0, refunds=[], validRefundsLength=0
+            await ledger.connect(user1).transferFund(provider1Address, "fine-tuning", 500);
+        });
+
+        it("should reuse array positions after refund processing", async () => {
+            // Step 1: Create first refund
+            // Before: balance=1000, pendingRefund=0, refunds=[], validRefundsLength=0
+            await ledger.connect(user1).retrieveFund([provider1Address], "fine-tuning");
+            // After: balance=1000, pendingRefund=1000, refunds=[{amount:1000, processed:false}], validRefundsLength=1
+            
+            let account = await serving.getAccount(user1Address, provider1);
+            const initialBalance = Number(account.balance);
+            const initialPendingRefund = Number(account.pendingRefund);
+            expect(account.refunds.length).to.equal(1);
+            expect(initialPendingRefund).to.equal(initialBalance); // pendingRefund should equal balance after retrieveFund
+            
+            // Step 2: Process refund after lock time
+            // Before: refunds=[{amount:1000, processed:false}], validRefundsLength=1
+            await time.increase(lockTime + 1);
+            await ledger.connect(user1).retrieveFund([provider1Address], "fine-tuning");
+            // After: balance=0, pendingRefund=0, refunds=[{amount:1000, processed:true}], validRefundsLength=0 (dirty data in position 0)
+            
+            account = await serving.getAccount(user1Address, provider1);
+            expect(Number(account.balance)).to.equal(0);
+            expect(Number(account.pendingRefund)).to.equal(0);
+            
+            // Step 3: Transfer more funds and create new refund
+            // Before: balance=0, refunds=[dirty_data], validRefundsLength=0
+            const newTransferAmount = 300;
+            await ledger.connect(user1).transferFund(provider1Address, "fine-tuning", newTransferAmount);
+            // After transfer: balance=300, refunds=[dirty_data], validRefundsLength=0
+            account = await serving.getAccount(user1Address, provider1);
+            expect(Number(account.balance)).to.equal(300);
+            expect(Number(account.pendingRefund)).to.equal(0);
+            
+            await ledger.connect(user1).retrieveFund([provider1Address], "fine-tuning");
+            // After new refund: balance=300, pendingRefund=300, refunds=[{amount:300, processed:false}], validRefundsLength=1
+            // Key optimization: Position 0 is REUSED, avoiding array.push() and saving ~15,000 gas
+            
+            account = await serving.getAccount(user1Address, provider1);
+            // Array length should remain 1 (reusing processed position)
+            expect(account.refunds.length).to.equal(1);
+            expect(Number(account.balance)).to.equal(300);
+            expect(Number(account.pendingRefund)).to.equal(300);
+        });
+
+        it("should handle refund cancellation through transfer operations", async () => {
+            // Step 1: Create initial refund
+            // Before: balance=1000, pendingRefund=0, refunds=[], validRefundsLength=0
+            await ledger.connect(user1).retrieveFund([provider1Address], "fine-tuning");
+            // After: balance=1000, pendingRefund=1000, refunds=[{amount:1000, processed:false}], validRefundsLength=1
+            
+            let account = await serving.getAccount(user1Address, provider1);
+            const initialPendingRefund = Number(account.pendingRefund);
+            const initialBalance = Number(account.balance);
+            // State snapshot: pendingRefund should equal balance after retrieveFund
+            expect(initialPendingRefund).to.equal(initialBalance);
+            
+            // Step 2: Transfer more funds - should automatically cancel some pending refunds
+            // Before: balance=1000, pendingRefund=1000, refunds=[{amount:1000, processed:false}]
+            const newTransferAmount = 300;
+            await ledger.connect(user1).transferFund(provider1Address, "fine-tuning", newTransferAmount);
+            // During transfer: cancelRetrievingAmount = min(300, 1000) = 300
+            // - Refund is partially cancelled: refund amount reduces by 300
+            // - PendingRefund becomes 1000-300=700
+            // After: balance=1000, pendingRefund=700, refunds=[{amount:700, processed:false}], validRefundsLength=1
+            
+            account = await serving.getAccount(user1Address, provider1);
+            expect(Number(account.balance)).to.equal(1000);
+            // Should cancel min(300, initialPendingRefund) from pending refunds
+            const cancelledAmount = Math.min(300, initialPendingRefund);
+            expect(Number(account.pendingRefund)).to.equal(initialPendingRefund - cancelledAmount);
+        });
+
+        it("should create multiple dirty data entries and demonstrate cleanup threshold", async () => {
+            // Strategy: Create multiple refunds through partial cancellation, then process them
+            
+            // Step 1: Create a large refund
+            await ledger.connect(user1).retrieveFund([provider1Address], "fine-tuning");
+            
+            let account = await serving.getAccount(user1Address, provider1);
+            expect(account.refunds.length).to.equal(1);
+            expect(Number(account.pendingRefund)).to.equal(1000);
+            // After: refunds=[{amount:1000, processed:false}], validRefundsLength=1
+            
+            // Step 2: Use partial cancellation to split the refund into smaller pieces
+            await ledger.connect(user1).transferFund(provider1Address, "fine-tuning", 10);
+            // After: refunds=[{amount:990, processed:false}], validRefundsLength=1
+            
+            // Now request another refund for the new balance
+            await ledger.connect(user1).retrieveFund([provider1Address], "fine-tuning");
+            // After: refunds=[{amount:990, processed:false}, {amount:10, processed:false}], validRefundsLength=2
+            
+            account = await serving.getAccount(user1Address, provider1);
+            console.log(`After partial cancellation and new refund: refunds.length=${account.refunds.length}, pendingRefund=${Number(account.pendingRefund)}`);
+            
+            // Step 3: Repeat the pattern to create more refunds
+            // The key insight: each transferFund + retrieveFund cycle may create new refund entries
+            
+            while (account.refunds.length < MAX_REFUNDS_PER_ACCOUNT) {
+                // Small transfer and refund to potentially create new entries
+                await ledger.connect(user1).transferFund(provider1Address, "fine-tuning", 10);
+                await ledger.connect(user1).retrieveFund([provider1Address], "fine-tuning");
+                
+                account = await serving.getAccount(user1Address, provider1);
+                
+                if (account.refunds.length == MAX_REFUNDS_PER_ACCOUNT) {
+                    account = await serving.getAccount(user1Address, provider1);
+                    expect(account.refunds.length).to.equal(MAX_REFUNDS_PER_ACCOUNT);
+                    
+                    // Now try to add one more refund - this should fail with TooManyRefunds error
+                    await ledger.connect(user1).transferFund(provider1Address, "fine-tuning", 10);
+                    await expect(
+                        ledger.connect(user1).retrieveFund([provider1Address], "fine-tuning")
+                    ).to.be.revertedWithCustomError(serving, "TooManyRefunds")
+                        .withArgs(user1Address, provider1Address);
+                    
+                    console.log(`Reached MAX_REFUNDS_PER_ACCOUNT: ${account.refunds.length}`);
+                    }
+
+            }
+            
+            // Step 4: Process all refunds to create dirty data
+            await time.increase(lockTime + 1);
+            await ledger.connect(user1).retrieveFund([provider1Address], "fine-tuning");
+            
+            account = await serving.getAccount(user1Address, provider1);
+            
+            // Verify cleanup was triggered since we had MAX_REFUNDS_PER_ACCOUNT dirty entries > REFUND_CLEANUP_THRESHOLD.
+            // Physical cleanup should have occurred, reducing from MAX_REFUNDS_PER_ACCOUNT to 1 (left one since retrieveFund adds one fund while processing other refunds)
+            expect(account.refunds.length).to.be.equal(1);
+            
+        });
+
     });
 
     describe("Service provider", () => {
@@ -351,17 +520,19 @@ describe("Fine tuning serving", () => {
         const encryptedSecret = "0x1234567890abcdef1234567890abcdef12345678";
         const taskFee = 10;
         let verifierInput: VerifierInputStruct;
+        let deliverableId: string;
 
         beforeEach(async () => {
             await serving.acknowledgeProviderSigner(provider1, provider1Signer);
-            await serving.connect(provider1).addDeliverable(ownerAddress, modelRootHash);
-            await serving.acknowledgeDeliverable(provider1, 0);
+            deliverableId = ethers.hexlify(ethers.randomBytes(32));
+            await serving.connect(provider1).addDeliverable(ownerAddress, deliverableId, modelRootHash);
+            await serving.acknowledgeDeliverable(provider1, deliverableId);
 
             verifierInput = {
                 taskFee,
                 encryptedSecret,
                 modelRootHash,
-                index: BigInt(0),
+                id: deliverableId,
                 nonce: BigInt(1),
                 providerSigner: provider1Signer,
                 user: ownerAddress,
@@ -372,7 +543,16 @@ describe("Fine tuning serving", () => {
         });
 
         it("should succeed", async () => {
-            await expect(serving.connect(provider1).settleFees(verifierInput))
+            const estimatedGas = await serving.connect(provider1).settleFees.estimateGas(verifierInput);
+            console.log(`Estimated gas for settleFees: ${estimatedGas.toString()}`);
+
+            const tx = await serving.connect(provider1).settleFees(verifierInput);
+            const receipt = await tx.wait();
+            console.log(`Actual gas used for settleFees: ${receipt.gasUsed.toString()}`);
+            console.log(`Gas price: ${tx.gasPrice?.toString() || 'N/A'} wei`);
+            console.log(`Transaction cost: ${(receipt.gasUsed * (tx.gasPrice || BigInt(0))).toString()} wei`);
+
+            await expect(tx)
                 .to.emit(serving, "BalanceUpdated")
                 .withArgs(ownerAddress, provider1Address, ownerInitialFineTuningBalance - taskFee, 0);
         });
@@ -403,16 +583,18 @@ describe("Fine tuning serving", () => {
         const encryptedSecret = "0x1234567890abcdef1234567890abcdef12345678";
         const taskFee = 10;
         let verifierInput: VerifierInputStruct;
+        let deliverableId: string;
 
         beforeEach(async () => {
             await serving.acknowledgeProviderSigner(provider1, provider1Signer);
-            await serving.connect(provider1).addDeliverable(ownerAddress, modelRootHash);
+            deliverableId = ethers.hexlify(ethers.randomBytes(32));
+            await serving.connect(provider1).addDeliverable(ownerAddress, deliverableId, modelRootHash);
 
             verifierInput = {
                 taskFee,
                 encryptedSecret: "0x",
                 modelRootHash,
-                index: BigInt(0),
+                id: deliverableId,
                 nonce: BigInt(1),
                 providerSigner: provider1Signer,
                 user: ownerAddress,
@@ -442,10 +624,92 @@ describe("Fine tuning serving", () => {
         });
     });
 
+    describe("Deliverable Limits", () => {
+        // Constants from AccountLibrary contract
+        const MAX_DELIVERABLES_PER_ACCOUNT = 20;
+        
+        it("should allow adding deliverables up to the limit", async () => {
+            // Add deliverables up to the limit
+            for (let i = 0; i < MAX_DELIVERABLES_PER_ACCOUNT; i++) {
+                const deliverableId = ethers.hexlify(ethers.randomBytes(32));
+                const modelRootHash = ethers.hexlify(ethers.randomBytes(32));
+                await serving.connect(provider1).addDeliverable(ownerAddress, deliverableId, modelRootHash);
+            }
+            
+            const account = await serving.getAccount(ownerAddress, provider1);
+            expect(account.deliverables.length).to.equal(MAX_DELIVERABLES_PER_ACCOUNT);
+        });
+        
+        it("should use circular array strategy when adding deliverables beyond the limit", async () => {
+            // Store deliverable IDs to verify circular array behavior
+            const deliverableIds: string[] = [];
+            const modelHashes: string[] = [];
+            
+            // First, add deliverables up to the limit
+            for (let i = 0; i < MAX_DELIVERABLES_PER_ACCOUNT; i++) {
+                const deliverableId = ethers.hexlify(ethers.randomBytes(32));
+                const modelRootHash = ethers.hexlify(ethers.randomBytes(32));
+                deliverableIds.push(deliverableId);
+                modelHashes.push(modelRootHash);
+                await serving.connect(provider1).addDeliverable(ownerAddress, deliverableId, modelRootHash);
+            }
+            
+            let account = await serving.getAccount(ownerAddress, provider1);
+            expect(account.deliverables.length).to.equal(MAX_DELIVERABLES_PER_ACCOUNT);
+            expect(account.deliverablesCount).to.equal(MAX_DELIVERABLES_PER_ACCOUNT);
+            expect(account.deliverablesHead).to.equal(0);
+            
+            // Verify all original deliverables are present through getDeliverable calls
+            for (let i = 0; i < MAX_DELIVERABLES_PER_ACCOUNT; i++) {
+                const deliverable = await serving.getDeliverable(ownerAddress, provider1Address, deliverableIds[i]);
+                expect(deliverable.modelRootHash).to.equal(modelHashes[i]);
+                expect(deliverable.id).to.equal(deliverableIds[i]);
+            }
+            
+            // Add one more deliverable - should trigger circular array behavior
+            const newId1 = ethers.hexlify(ethers.randomBytes(32));
+            const newHash1 = ethers.hexlify(ethers.randomBytes(32));
+            await serving.connect(provider1).addDeliverable(ownerAddress, newId1, newHash1);
+            
+            account = await serving.getAccount(ownerAddress, provider1);
+            expect(account.deliverables.length).to.equal(MAX_DELIVERABLES_PER_ACCOUNT);
+            expect(account.deliverablesCount).to.equal(MAX_DELIVERABLES_PER_ACCOUNT);
+            expect(account.deliverablesHead).to.equal(1); // Head moved to next position
+            
+            // The oldest deliverable (first one) should have been removed from the mapping
+            await expect(serving.getDeliverable(ownerAddress, provider1Address, deliverableIds[0]))
+                .to.be.revertedWith("Deliverable does not exist");
+            
+            // New deliverable should be accessible
+            const newDeliverable1 = await serving.getDeliverable(ownerAddress, provider1Address, newId1);
+            expect(newDeliverable1.modelRootHash).to.equal(newHash1);
+            expect(newDeliverable1.id).to.equal(newId1);
+            
+            // Add another deliverable - should remove the second oldest
+            const newId2 = ethers.hexlify(ethers.randomBytes(32));
+            const newHash2 = ethers.hexlify(ethers.randomBytes(32));
+            await serving.connect(provider1).addDeliverable(ownerAddress, newId2, newHash2);
+            
+            account = await serving.getAccount(ownerAddress, provider1);
+            expect(account.deliverables.length).to.equal(MAX_DELIVERABLES_PER_ACCOUNT);
+            expect(account.deliverablesCount).to.equal(MAX_DELIVERABLES_PER_ACCOUNT);
+            expect(account.deliverablesHead).to.equal(2); // Head moved to next position
+            
+            // The second oldest deliverable should now be removed
+            await expect(serving.getDeliverable(ownerAddress, provider1Address, deliverableIds[1]))
+                .to.be.revertedWith("Deliverable does not exist");
+            
+            // Both new deliverables should be accessible
+            const newDeliverable2 = await serving.getDeliverable(ownerAddress, provider1Address, newId2);
+            expect(newDeliverable2.modelRootHash).to.equal(newHash2);
+            expect(newDeliverable2.id).to.equal(newId2);
+        });
+    });
+
     describe("deleteAccount", () => {
         it("should delete account", async () => {
             await expect(ledger.deleteLedger()).not.to.be.reverted;
-            const accounts = await serving.getAllAccounts();
+            const [accounts] = await serving.getAllAccounts(0, 0);
             expect(accounts.length).to.equal(1);
         });
     });

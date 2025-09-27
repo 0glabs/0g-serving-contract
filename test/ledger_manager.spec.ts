@@ -64,7 +64,8 @@ describe("Ledger manager", () => {
     });
 
     it("should get all ledgers", async () => {
-        const ledgers = await ledger.getAllLedgers();
+        const [ledgers, total] = await ledger.getAllLedgers(0, 0); // offset=0, limit=0 means get all
+        expect(total).to.equal(BigInt(2));
         const userAddresses = (ledgers as LedgerStructOutput[]).map((a) => a.user);
         const availableBalances = (ledgers as LedgerStructOutput[]).map((a) => a.availableBalance);
         const additionalInfos = (ledgers as LedgerStructOutput[]).map((a) => a.additionalInfo);
@@ -96,7 +97,7 @@ describe("Ledger manager", () => {
                 ledger.connect(user1).transferFund(provider1Address, "inference", user1InitialInferenceBalance),
             ]);
 
-            const ledgers = await ledger.getAllLedgers();
+            const [ledgers, total] = await ledger.getAllLedgers(0, 0);
             const userAddresses = (ledgers as LedgerStructOutput[]).map((a) => a.user);
             const availableBalances = (ledgers as LedgerStructOutput[]).map((a) => a.availableBalance);
             const inferenceProviders = (ledgers as LedgerStructOutput[]).map((a) => a.inferenceProviders);
@@ -173,6 +174,42 @@ describe("Ledger manager", () => {
             expect(fineTuningAccount.balance).to.equal(BigInt(ownerInitialFineTuningBalance));
             expect(inferenceAccount.pendingRefund).to.equal(BigInt(ownerInitialInferenceBalance / 2));
             expect(fineTuningAccount.pendingRefund).to.equal(BigInt(ownerInitialFineTuningBalance / 2));
+        });
+
+
+        it("should handle array optimization during multiple transfer operations", async () => {
+            // Step 1: Setup initial account and create refund
+            // Before: balance=0, pendingRefund=0, refunds=[], validRefundsLength=0
+            await ledger.transferFund(provider1Address, "fine-tuning", 800);
+            // After transfer: balance=800, pendingRefund=0, refunds=[], validRefundsLength=0
+            await ledger.retrieveFund([provider1Address], "fine-tuning");
+            // After refund request: balance=800, pendingRefund=800, refunds=[{amount:800, processed:false}], validRefundsLength=1
+            
+            let account = await fineTuningServing.getAccount(ownerAddress, provider1);
+            expect(account.refunds.length).to.equal(1);
+            expect(account.pendingRefund).to.equal(800);
+            
+            // Step 2: Transfer with full cancellation
+            // Before: balance=800, pendingRefund=800, refunds=[{amount:800, processed:false}]
+            await ledger.transferFund(provider1Address, "fine-tuning", 1000);
+            // During transfer: cancelRetrievingAmount = min(1000, 800) = 800 (full cancellation)
+            // - Entire refund is cancelled: refund marked as processed
+            // - PendingRefund becomes 800-800=0
+            // After: balance=1000, pendingRefund=0, refunds=[{amount:800, processed:true}], validRefundsLength=0
+            
+            account = await fineTuningServing.getAccount(ownerAddress, provider1);
+            expect(account.pendingRefund).to.equal(0);
+            expect(account.balance).to.equal(1000); 
+            
+            // Step 3: Create new refund - should reuse array position
+            // Before: balance=1000, pendingRefund=0, refunds=[dirty_data], validRefundsLength=0
+            await ledger.retrieveFund([provider1Address], "fine-tuning");
+            // After: balance=1000, pendingRefund=1000, refunds=[{amount:1000, processed:false}], validRefundsLength=1
+            // Key optimization: Same array position is REUSED (index 0), no array expansion
+            
+            account = await fineTuningServing.getAccount(ownerAddress, provider1);
+            expect(account.refunds.length).to.equal(1); // Reusing position
+            expect(account.pendingRefund).to.equal(1000);
         });
     });
 
@@ -273,11 +310,11 @@ describe("Ledger manager", () => {
             ledger.connect(user1).transferFund(provider1Address, "fine-tuning", user1InitialFineTuningBalance),
         ]);
 
-        let accounts = await fineTuningServing.getAllAccounts();
+        let [accounts] = await fineTuningServing.getAllAccounts(0, 0);
         expect(accounts.length).to.equal(2);
 
         await expect(ledger.deleteLedger()).not.to.be.reverted;
-        accounts = await fineTuningServing.getAllAccounts();
+        [accounts] = await fineTuningServing.getAllAccounts(0, 0);
         expect(accounts.length).to.equal(1);
     });
 });

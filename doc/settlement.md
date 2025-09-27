@@ -98,3 +98,185 @@ Break down ProofInputs into segments according to SegmentSize, where each segmen
 2. The "refunded funds pool" contains funds that users have requested to refund but the lock time (lock time) has not been reached, so it has not yet been returned to the users.
 3. The "refunded funds pool" consists of individual refunds. Each refund has its amount and application time.
 4. When transferring, the system first deducts from the "non-refunded funds pool" and then proceeds in reverse chronological order to deduct from each refund in the "refunded funds pool" as needed.
+
+## Deposit and Refund Cancellation Process
+
+When a user deposits funds into their account, the system can optimize gas costs by canceling pending refunds instead of processing them separately. This section describes the optimized deposit process implemented in the fine-tuning contracts.
+
+### Overview
+
+The `depositFund` function handles two scenarios:
+1. **Direct deposit**: Simply adds the amount to the account balance
+2. **Deposit with refund cancellation**: Cancels pending refunds up to a specified amount before adding new funds
+
+### Refund Cancellation Logic
+
+When `cancelRetrievingAmount` > 0, the system processes pending refunds efficiently:
+
+#### In-Place Processing
+The optimization avoids creating new arrays in memory by processing refunds directly in storage:
+
+```solidity
+// Process refunds in-place to avoid memory allocation
+uint writeIndex = 0;
+for (uint i = 0; i < account.refunds.length; i++) {
+    Refund storage refund = account.refunds[i];
+    // Process refund...
+}
+```
+
+#### Cancellation Algorithm
+
+For each unprocessed refund, the system determines whether to:
+
+1. **Fully cancel** the refund (if `remainingCancel >= refund.amount`):
+   - Marks the refund as processed
+   - Deducts the full amount from `pendingRefund`
+   - Reduces `remainingCancel` by the refund amount
+
+2. **Partially cancel** the refund (if `0 < remainingCancel < refund.amount`):
+   - Reduces the refund amount by `remainingCancel`
+   - Deducts `remainingCancel` from `pendingRefund`
+   - Sets `remainingCancel` to 0 (no more cancellations)
+
+3. **Keep unchanged** (if `remainingCancel == 0`):
+   - The refund remains in the queue unchanged
+
+#### Array Compaction
+
+After processing, unprocessed refunds are compacted to the front of the array:
+- Uses a `writeIndex` to track where to place kept refunds
+- Moves unprocessed refunds to consecutive positions at the array's start
+- Updates the index field for each moved refund
+
+#### Cleanup Strategy
+
+The system employs a lazy cleanup approach:
+- Only removes processed refunds from the array when necessary
+- Calls `_cleanupRefunds` to pop processed entries from the array's end
+- Reduces storage operations and gas costs
+
+### Example Scenario
+
+Consider an account with pending refunds: [100, 200, 150] and `cancelRetrievingAmount = 250`:
+
+1. **First refund (100)**: 
+   - 250 ≥ 100 → Fully canceled
+   - Remaining: 150
+
+2. **Second refund (200)**:
+   - 150 < 200 → Partially canceled to 50
+   - Remaining: 0
+
+3. **Third refund (150)**:
+   - 0 remaining → Unchanged
+
+## Refund Array Management System
+
+The contract implements a sophisticated refund management system designed for gas efficiency and data integrity.
+
+### Core Data Structure Design
+
+#### Dual-State Array Architecture
+Each account maintains a refund array with two logical regions:
+
+- **Active region**: Positions 0 to `validRefundsLength-1` contain currently active refunds
+- **Dirty region**: Positions from `validRefundsLength` to `array.length-1` contain processed or stale data
+
+This design separates logical state from physical storage, enabling efficient reuse of memory slots.
+
+#### Valid Length Tracking
+The `validRefundsLength` field serves as the boundary marker:
+- Acts as both the count of active refunds and the insertion point for new refunds
+- Enables O(1) determination of where to place new refund data
+- Maintains data consistency across different operations
+
+### Refund Lifecycle Management
+
+#### Creation Strategy
+When creating new refunds, the system employs a position reuse strategy:
+
+```solidity
+if (account.validRefundsLength < account.refunds.length) {
+    // Reuse existing memory slot
+    newIndex = account.validRefundsLength;
+    account.refunds[newIndex] = Refund(newIndex, amount, block.timestamp, false);
+} else {
+    // Expand array with new slot
+    newIndex = account.refunds.length;
+    account.refunds.push(Refund(newIndex, amount, block.timestamp, false));
+}
+```
+
+This approach prioritizes memory slot reuse to minimize storage expansion costs.
+
+#### Processing Algorithm
+The `processRefund` function implements in-place array compaction:
+
+1. **Iteration phase**: Examines each refund for release eligibility based on lock time
+2. **Compaction phase**: Moves active refunds to consecutive positions starting from index 0
+3. **State update**: Updates `validRefundsLength` to reflect the new active refund count
+4. **Cleanup decision**: Applies conditional cleanup based on dirty data volume
+
+#### Cleanup Strategy Framework
+The system employs a threshold-based cleanup approach with two operational modes:
+
+**Constants Definition:**
+- `MAX_REFUNDS_PER_ACCOUNT = 30`: Hard limit on refunds per account
+- `REFUND_CLEANUP_THRESHOLD = 15`: Decision threshold for cleanup strategy selection
+
+**Strategy Selection Logic:**
+```solidity
+if (dirtyCount >= REFUND_CLEANUP_THRESHOLD) {
+    // High dirty count: Physical cleanup more economical
+    _cleanupRefunds(account, writeIndex);
+} else {
+    // Low dirty count: Mark as processed to prevent reprocessing
+    for (uint i = writeIndex; i < account.refunds.length; i++) {
+        account.refunds[i].processed = true;
+    }
+}
+```
+
+### Design Principles
+
+#### Memory Efficiency
+- **In-place processing**: Eliminates temporary array allocations during compaction
+- **Slot reuse**: Prioritizes existing memory slots over array expansion
+- **Lazy cleanup**: Defers expensive cleanup operations until economically justified
+
+#### Data Integrity
+- **Processed flag**: Prevents duplicate processing of the same refund
+- **Index consistency**: Maintains correct index values after compaction
+- **Boundary enforcement**: Uses `validRefundsLength` to prevent access to stale data
+
+#### Time Ordering Preservation
+- **FIFO processing**: Maintains chronological order for refund processing
+- **Lock time compliance**: Enforces proper waiting periods before fund release
+- **Cancellation sequencing**: Preserves time-based ordering during deposit cancellations
+
+### Algorithmic Complexity
+
+#### Space Complexity
+- **Best case**: O(active_refunds) when cleanup is frequent
+- **Worst case**: O(MAX_REFUNDS_PER_ACCOUNT) due to hard limits
+- **Amortized**: Approaches O(active_refunds) with proper threshold tuning
+
+#### Time Complexity
+- **Creation**: O(1) for position reuse, O(1) for expansion
+- **Processing**: O(total_refunds) for single pass processing
+- **Cleanup**: O(dirty_count) when threshold is exceeded
+
+### Economic Model
+
+The system's economic efficiency stems from:
+
+#### Storage Cost Reduction
+- Reusing existing slots avoids new storage allocation costs
+- Lazy cleanup amortizes expensive operations across multiple transactions
+- In-place processing eliminates memory copy operations
+
+#### Transaction Gas Optimization
+- Predictable gas usage through bounded array operations
+- Threshold-based decisions optimize for common usage patterns
+- Maximum gas consumption remains within safe transaction limits

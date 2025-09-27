@@ -23,33 +23,37 @@ interface ILedger {
 
 interface IServing {
     function accountExists(address user, address provider) external view returns (bool);
-
     function getPendingRefund(address user, address provider) external view returns (uint);
-
     function depositFund(address user, address provider, uint cancelRetrievingAmount) external payable;
-
     function requestRefundAll(address user, address provider) external;
-
     function processRefund(
         address user,
         address provider
     ) external returns (uint totalAmount, uint balance, uint pendingRefund);
-
     function deleteAccount(address user, address provider) external;
 }
 
 contract LedgerManager is Ownable, Initializable, ReentrancyGuard {
     using EnumerableSet for EnumerableSet.Bytes32Set;
+    using EnumerableSet for EnumerableSet.AddressSet;
 
     address payable public inferenceAddress;
     address payable public fineTuningAddress;
     LedgerMap private ledgerMap;
+    mapping(address => EnumerableSet.AddressSet) private userInferenceProviders;
+    mapping(address => EnumerableSet.AddressSet) private userFineTuningProviders;
     IServing private fineTuningAccount;
     IServing private inferenceAccount;
+    
+    // Constants
+    uint public constant MAX_PROVIDERS_PER_BATCH = 20;
 
+    // Errors
     error LedgerNotExists(address user);
     error LedgerExists(address user);
     error InsufficientBalance(address user);
+    error TooManyProviders(uint requested, uint maximum);
+    error InvalidServiceType(string serviceType);
 
     struct LedgerMap {
         EnumerableSet.Bytes32Set _keys;
@@ -92,15 +96,25 @@ contract LedgerManager is Ownable, Initializable, ReentrancyGuard {
         return _get(user);
     }
 
-    function getAllLedgers() public view returns (Ledger[] memory ledgers) {
-        uint len = _length();
-        ledgers = new Ledger[](len);
+    function getAllLedgers(
+        uint offset,
+        uint limit
+    ) public view returns (Ledger[] memory ledgers, uint total) {
+        total = _length();
+        
+        if (offset >= total) {
+            return (new Ledger[](0), total);
+        }
+        
+        uint end = limit == 0 ? total : Math.min(offset + limit, total);
+        uint resultLen = end - offset;
+        ledgers = new Ledger[](resultLen);
 
-        for (uint i = 0; i < len; i++) {
-            ledgers[i] = _at(i);
+        for (uint i = 0; i < resultLen; i++) {
+            ledgers[i] = _at(offset + i);
         }
 
-        return ledgers;
+        return (ledgers, total);
     }
 
     function addLedger(
@@ -138,14 +152,13 @@ contract LedgerManager is Ownable, Initializable, ReentrancyGuard {
         uint amount
     ) external nonReentrant withLedgerLock(msg.sender) {
         Ledger storage ledger = _get(msg.sender);
-        (address servingAddress, IServing serving, uint serviceType) = _getServiceDetails(serviceTypeStr);
+        (address servingAddress, IServing serving, bool isInference) = _getServiceDetails(serviceTypeStr);
 
         uint transferAmount = amount;
         bytes memory payload;
 
         if (serving.accountExists(msg.sender, provider)) {
-            // If the account already exists, First cancel the amount being retrieved,
-            // and if it is insufficient, then transfer the remaining amount.
+            // Account exists - handle pending refunds
             uint retrievingAmount = serving.getPendingRefund(msg.sender, provider);
             uint cancelRetrievingAmount = Math.min(amount, retrievingAmount);
             transferAmount -= cancelRetrievingAmount;
@@ -157,9 +170,8 @@ contract LedgerManager is Ownable, Initializable, ReentrancyGuard {
                 cancelRetrievingAmount
             );
         } else {
-            // If the account does not exist, add a new account.
-            if (serviceType == 0) {
-                // Handle inference service
+            // New account
+            if (isInference) {
                 payload = abi.encodeWithSignature(
                     "addAccount(address,address,uint256[2],string)",
                     msg.sender,
@@ -167,18 +179,16 @@ contract LedgerManager is Ownable, Initializable, ReentrancyGuard {
                     ledger.inferenceSigner,
                     ledger.additionalInfo
                 );
-                // Add provider to array if not exists
-                _safeAddProvider(ledger.inferenceProviders, provider);
             } else {
-                // Handle fine-tuning service
                 payload = abi.encodeWithSignature(
                     "addAccount(address,address,string)",
                     msg.sender,
                     provider,
                     ledger.additionalInfo
                 );
-                _safeAddProvider(ledger.fineTuningProviders, provider);
             }
+            // Add provider to optimized storage
+            _addProvider(msg.sender, provider, isInference);
         }
 
         require(ledger.availableBalance >= transferAmount, "Insufficient balance");
@@ -192,8 +202,11 @@ contract LedgerManager is Ownable, Initializable, ReentrancyGuard {
         address[] memory providers,
         string memory serviceType
     ) external nonReentrant withLedgerLock(msg.sender) {
-        (, IServing serving, ) = _getServiceDetails(serviceType);
+        if (providers.length > MAX_PROVIDERS_PER_BATCH) {
+            revert TooManyProviders(providers.length, MAX_PROVIDERS_PER_BATCH);
+        }
 
+        (, IServing serving, ) = _getServiceDetails(serviceType);
         Ledger storage ledger = _get(msg.sender);
         uint totalAmount = 0;
 
@@ -207,52 +220,73 @@ contract LedgerManager is Ownable, Initializable, ReentrancyGuard {
 
     function deleteLedger() external nonReentrant withLedgerLock(msg.sender) {
         bytes32 key = _key(msg.sender);
+
+        // Delete all inference accounts
+        EnumerableSet.AddressSet storage inferenceProvs = userInferenceProviders[msg.sender];
+        address[] memory inferenceList = new address[](inferenceProvs.length());
+        for (uint i = 0; i < inferenceProvs.length(); i++) {
+            inferenceList[i] = inferenceProvs.at(i);
+        }
+        for (uint i = 0; i < inferenceList.length; i++) {
+            try inferenceAccount.deleteAccount(msg.sender, inferenceList[i]) {
+                inferenceProvs.remove(inferenceList[i]);
+            } catch {
+                inferenceProvs.remove(inferenceList[i]); // Remove even on failure
+            }
+        }
+
+        // Delete all fine-tuning accounts
+        EnumerableSet.AddressSet storage finetuningProvs = userFineTuningProviders[msg.sender];
+        address[] memory finetuningList = new address[](finetuningProvs.length());
+        for (uint i = 0; i < finetuningProvs.length(); i++) {
+            finetuningList[i] = finetuningProvs.at(i);
+        }
+        for (uint i = 0; i < finetuningList.length; i++) {
+            try fineTuningAccount.deleteAccount(msg.sender, finetuningList[i]) {
+                finetuningProvs.remove(finetuningList[i]);
+            } catch {
+                finetuningProvs.remove(finetuningList[i]); // Remove even on failure
+            }
+        }
+
+        // Clear legacy arrays  
         Ledger storage ledger = _get(msg.sender);
-
-        // Delete all sub-accounts first
-        for (uint i = 0; i < ledger.inferenceProviders.length; i++) {
-            try inferenceAccount.deleteAccount(msg.sender, ledger.inferenceProviders[i]) {
-                // Success
-            } catch {
-                // Continue even if sub-account deletion fails
-            }
-        }
-
-        for (uint i = 0; i < ledger.fineTuningProviders.length; i++) {
-            try fineTuningAccount.deleteAccount(msg.sender, ledger.fineTuningProviders[i]) {
-                // Success
-            } catch {
-                // Continue
-            }
-        }
-
-        // Delete main account
+        delete ledger.inferenceProviders;
+        delete ledger.fineTuningProviders;
+        
+        // Delete main ledger
         ledgerMap._keys.remove(key);
         delete ledgerMap._values[key];
     }
 
-
-    // Add provider to array if not already exists
-    function _safeAddProvider(address[] storage providers, address provider) private {
-        for (uint i = 0; i < providers.length; i++) {
-            if (providers[i] == provider) {
-                return; // Already exists
+    function _addProvider(address user, address provider, bool isInference) private {
+        EnumerableSet.AddressSet storage providers = isInference 
+            ? userInferenceProviders[user] 
+            : userFineTuningProviders[user];
+        
+        // Only add if not already exists
+        if (!providers.contains(provider)) {
+            providers.add(provider);
+            
+            // Also update legacy array for backwards compatibility
+            Ledger storage ledger = _get(user);
+            if (isInference) {
+                ledger.inferenceProviders.push(provider);
+            } else {
+                ledger.fineTuningProviders.push(provider);
             }
         }
-        providers.push(provider);
     }
 
-
-
-    function _getServiceDetails(string memory serviceType) private view returns (address, IServing, uint) {
+    function _getServiceDetails(string memory serviceType) private view returns (address, IServing, bool) {
         bytes32 serviceTypeHash = keccak256(abi.encodePacked(serviceType));
 
         if (serviceTypeHash == keccak256("inference")) {
-            return (inferenceAddress, inferenceAccount, 0);
+            return (inferenceAddress, inferenceAccount, true);
         } else if (serviceTypeHash == keccak256("fine-tuning")) {
-            return (fineTuningAddress, fineTuningAccount, 1);
+            return (fineTuningAddress, fineTuningAccount, false);
         } else {
-            revert("Invalid service type");
+            revert InvalidServiceType(serviceType);
         }
     }
 
