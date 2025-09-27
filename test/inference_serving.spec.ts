@@ -127,7 +127,7 @@ describe("Inference Serving", () => {
         });
 
         it("should get all users", async () => {
-            const accounts = await serving.getAllAccounts();
+            const [accounts] = await serving.getAllAccounts(0, 0);
             const userAddresses = (accounts as AccountStructOutput[]).map((a) => a.user);
             const providerAddresses = (accounts as AccountStructOutput[]).map((a) => a.provider);
             const balances = (accounts as AccountStructOutput[]).map((a) => a.balance);
@@ -234,6 +234,141 @@ describe("Inference Serving", () => {
             const account = await serving.getAccount(ownerAddress, provider1);
             expect(account.balance).to.be.equal(BigInt(0));
         });
+    });
+
+    describe("Refund Array Optimization", () => {
+        // Constants from AccountLibrary contract
+        const MAX_REFUNDS_PER_ACCOUNT = 30;
+        
+        beforeEach(async () => {
+            // Setup: Transfer funds to ensure we have a clean test account
+            // After setup: balance=1000 (500 from previous + 500 new), pendingRefund=0, refunds=[], validRefundsLength=0
+            await ledger.connect(user1).transferFund(provider1Address, "inference", 500);
+        });
+
+        it("should reuse array positions after refund processing", async () => {
+            // Step 1: Create first refund
+            // Before: balance=1000, pendingRefund=0, refunds=[], validRefundsLength=0
+            await ledger.connect(user1).retrieveFund([provider1Address], "inference");
+            // After: balance=1000, pendingRefund=1000, refunds=[{amount:1000, processed:false}], validRefundsLength=1
+            
+            let account = await serving.getAccount(user1Address, provider1);
+            const initialBalance = Number(account.balance);
+            const initialPendingRefund = Number(account.pendingRefund);
+            expect(account.refunds.length).to.equal(1);
+            expect(initialPendingRefund).to.equal(initialBalance); // pendingRefund should equal balance after retrieveFund
+            
+            // Step 2: Process refund after lock time
+            // Before: refunds=[{amount:1000, processed:false}], validRefundsLength=1
+            await time.increase(lockTime + 1);
+            await ledger.connect(user1).retrieveFund([provider1Address], "inference");
+            // After: balance=0, pendingRefund=0, refunds=[{amount:1000, processed:true}], validRefundsLength=0 (dirty data in position 0)
+            
+            account = await serving.getAccount(user1Address, provider1);
+            expect(Number(account.balance)).to.equal(0);
+            expect(Number(account.pendingRefund)).to.equal(0);
+            
+            // Step 3: Transfer more funds and create new refund - should reuse position 0
+            // Before: balance=0, refunds=[dirty_data], validRefundsLength=0
+            const newTransferAmount = 300;
+            await ledger.connect(user1).transferFund(provider1Address, "inference", newTransferAmount);
+            // After transfer: balance=300, refunds=[dirty_data], validRefundsLength=0
+            account = await serving.getAccount(user1Address, provider1);
+            expect(Number(account.balance)).to.equal(300);
+            expect(Number(account.pendingRefund)).to.equal(0);
+            
+            await ledger.connect(user1).retrieveFund([provider1Address], "inference");
+            // After new refund: balance=300, pendingRefund=300, refunds=[{amount:300, processed:false}], validRefundsLength=1
+            // Key optimization: Position 0 is REUSED, avoiding array.push() and saving ~15,000 gas
+            
+            account = await serving.getAccount(user1Address, provider1);
+            // Array length should remain 1 (reusing processed position)
+            expect(account.refunds.length).to.equal(1);
+            expect(Number(account.balance)).to.equal(300);
+            expect(Number(account.pendingRefund)).to.equal(300);
+        });
+
+        it("should handle refund cancellation through transfer operations", async () => {
+            // Step 1: Create initial refund
+            await ledger.connect(user1).retrieveFund([provider1Address], "inference");
+            // After: balance=1000, pendingRefund=1000, refunds=[{amount:1000, processed:false}], validRefundsLength=1
+            
+            let account = await serving.getAccount(user1Address, provider1);
+            const initialPendingRefund = Number(account.pendingRefund);
+            const initialBalance = Number(account.balance);
+            // State snapshot: pendingRefund should equal balance after retrieveFund
+            expect(initialPendingRefund).to.equal(initialBalance);
+            
+            // Step 2: Transfer more funds - should automatically cancel some pending refunds
+            const newTransferAmount = 300;
+            await ledger.connect(user1).transferFund(provider1Address, "inference", newTransferAmount);
+            
+            account = await serving.getAccount(user1Address, provider1);
+            expect(Number(account.balance)).to.equal(1000);
+            const cancelledAmount = Math.min(300, initialPendingRefund);
+            expect(Number(account.pendingRefund)).to.equal(initialPendingRefund - cancelledAmount);
+        });
+
+        it("should create multiple dirty data entries and demonstrate cleanup threshold", async () => {
+            // Strategy: Create multiple refunds through partial cancellation, then process them
+            
+            // Step 1: Create a large refund
+            await ledger.connect(user1).retrieveFund([provider1Address], "inference");
+            
+            let account = await serving.getAccount(user1Address, provider1);
+            expect(account.refunds.length).to.equal(1);
+            expect(Number(account.pendingRefund)).to.equal(1000);
+            // After: refunds=[{amount:1000, processed:false}], validRefundsLength=1
+            
+            // Step 2: Use partial cancellation to split the refund into smaller pieces
+            await ledger.connect(user1).transferFund(provider1Address, "inference", 10);
+            // After: refunds=[{amount:990, processed:false}], validRefundsLength=1
+            
+            // Now request another refund for the new balance
+            await ledger.connect(user1).retrieveFund([provider1Address], "inference");
+            // After: refunds=[{amount:990, processed:false}, {amount:10, processed:false}], validRefundsLength=2
+            
+            account = await serving.getAccount(user1Address, provider1);
+            console.log(`After partial cancellation and new refund: refunds.length=${account.refunds.length}, pendingRefund=${Number(account.pendingRefund)}`);
+            
+            // Step 3: Repeat the pattern to create more refunds
+            // The key insight: each transferFund + retrieveFund cycle may create new refund entries
+            
+            while (account.refunds.length < MAX_REFUNDS_PER_ACCOUNT) {
+                // Small transfer and refund to potentially create new entries
+                await ledger.connect(user1).transferFund(provider1Address, "inference", 10);
+                await ledger.connect(user1).retrieveFund([provider1Address], "inference");
+                
+                account = await serving.getAccount(user1Address, provider1);
+                
+                if (account.refunds.length == MAX_REFUNDS_PER_ACCOUNT) {
+                    account = await serving.getAccount(user1Address, provider1);
+                    expect(account.refunds.length).to.equal(MAX_REFUNDS_PER_ACCOUNT);
+                    
+                    // Now try to add one more refund - this should fail with TooManyRefunds error
+                    await ledger.connect(user1).transferFund(provider1Address, "inference", 10);
+                    await expect(
+                        ledger.connect(user1).retrieveFund([provider1Address], "inference")
+                    ).to.be.revertedWithCustomError(serving, "TooManyRefunds")
+                        .withArgs(user1Address, provider1Address);
+                    
+                    console.log(`Reached MAX_REFUNDS_PER_ACCOUNT: ${account.refunds.length}`);
+                    }
+
+            }
+            
+            // Step 4: Process all refunds to create dirty data
+            await time.increase(lockTime + 1);
+            await ledger.connect(user1).retrieveFund([provider1Address], "inference");
+            
+            account = await serving.getAccount(user1Address, provider1);
+            
+            // Verify cleanup was triggered since we had MAX_REFUNDS_PER_ACCOUNT dirty entries > REFUND_CLEANUP_THRESHOLD.
+            // Physical cleanup should have occurred, reducing from MAX_REFUNDS_PER_ACCOUNT to 1 (left one since retrieveFund adds one fund while processing other refunds)
+            expect(account.refunds.length).to.be.equal(1);
+            
+        });
+
     });
 
     describe("Service provider", () => {
@@ -603,7 +738,7 @@ describe("Inference Serving", () => {
     describe("deleteAccount", () => {
         it("should delete account", async () => {
             await expect(ledger.deleteLedger()).not.to.be.reverted;
-            const accounts = await serving.getAllAccounts();
+            const [accounts] = await serving.getAllAccounts(0, 0);
             expect(accounts.length).to.equal(1);
         });
     });

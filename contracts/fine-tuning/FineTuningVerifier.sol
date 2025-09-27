@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.0;
 
-import "hardhat/console.sol";
+
 
 struct VerifierInput {
-    uint index;
+    string id;   // Changed from bytes32 to string
     bytes encryptedSecret;
     bytes modelRootHash;
     uint nonce;

@@ -5,6 +5,8 @@ import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/utils/structs/EnumerableMap.sol";
 import "../utils/Initializable.sol";
 import "./FineTuningAccount.sol";
+
+using AccountLibrary for AccountLibrary.AccountMap;
 import "./FineTuningService.sol";
 import "./FineTuningVerifier.sol";
 import "../ledger/LedgerManager.sol";
@@ -70,19 +72,23 @@ contract FineTuningServing is Ownable, Initializable, IServing {
 
     // user functions
 
-    function getAccount(address user, address provider) public view returns (Account memory) {
-        return accountMap.getAccount(user, provider);
+    function getAccount(address user, address provider) public view returns (AccountDetails memory) {
+        return accountMap.getAccountDetails(user, provider);
     }
 
-    function getAllAccounts() public view returns (Account[] memory) {
-        return accountMap.getAllAccounts();
+    function getAllAccounts(
+        uint offset,
+        uint limit
+    ) public view returns (AccountSummary[] memory accounts, uint total) {
+        require(limit == 0 || limit <= 50, "Limit too large");
+        return accountMap.getAllAccounts(offset, limit);
     }
 
     function getAccountsByProvider(
         address provider,
         uint offset, 
         uint limit
-    ) public view returns (Account[] memory accounts, uint total) {
+    ) public view returns (AccountSummary[] memory accounts, uint total) {
         require(limit == 0 || limit <= 50, "Limit too large");
         return accountMap.getAccountsByProvider(provider, offset, limit);
     }
@@ -91,14 +97,14 @@ contract FineTuningServing is Ownable, Initializable, IServing {
         address user,
         uint offset, 
         uint limit
-    ) public view returns (Account[] memory accounts, uint total) {
+    ) public view returns (AccountSummary[] memory accounts, uint total) {
         require(limit == 0 || limit <= 50, "Limit too large");
         return accountMap.getAccountsByUser(user, offset, limit);
     }
 
     function getBatchAccountsByUsers(
         address[] calldata users
-    ) external view returns (Account[] memory accounts) {
+    ) external view returns (AccountSummary[] memory accounts) {
         return accountMap.getBatchAccountsByUsers(users, msg.sender);
     }
 
@@ -152,8 +158,8 @@ contract FineTuningServing is Ownable, Initializable, IServing {
         accountMap.acknowledgeProviderSigner(msg.sender, provider, providerSigner);
     }
 
-    function acknowledgeDeliverable(address provider, uint index) external {
-        accountMap.acknowledgeDeliverable(msg.sender, provider, index);
+    function acknowledgeDeliverable(address provider, string calldata id) external {
+        accountMap.acknowledgeDeliverable(msg.sender, provider, id);
     }
 
     // provider functions
@@ -175,16 +181,26 @@ contract FineTuningServing is Ownable, Initializable, IServing {
         emit ServiceRemoved(msg.sender);
     }
 
-    function addDeliverable(address user, bytes memory modelRootHash) external {
-        accountMap.addDeliverable(user, msg.sender, modelRootHash);
+    function addDeliverable(address user, string calldata id, bytes memory modelRootHash) external {
+        accountMap.addDeliverable(user, msg.sender, id, modelRootHash);
     }
 
-    function getDeliverable(address user, address provider, uint index) public view returns (Deliverable memory) {
-        return accountMap.getAccount(user, provider).deliverables[index];
+    function getDeliverable(address user, address provider, string calldata id) public view returns (Deliverable memory) {
+        return accountMap.getDeliverable(user, provider, id);
+    }
+
+    function getDeliverables(address user, address provider) public view returns (Deliverable[] memory) {
+        return accountMap.getDeliverables(user, provider);
+    }
+
+    function acknowledgeDeliverable(address user, address provider, string calldata id) external {
+        accountMap.acknowledgeDeliverable(user, provider, id);
     }
 
     function settleFees(VerifierInput calldata verifierInput) external {
         Account storage account = accountMap.getAccount(verifierInput.user, msg.sender);
+        
+        // Group all validation checks together for gas efficiency
         if (account.providerSigner != verifierInput.providerSigner) {
             revert InvalidVerifierInput("provider signing address is not acknowledged");
         }
@@ -194,10 +210,17 @@ contract FineTuningServing is Ownable, Initializable, IServing {
         if (account.balance < verifierInput.taskFee) {
             revert InvalidVerifierInput("insufficient balance");
         }
-        Deliverable storage deliverable = account.deliverables[verifierInput.index];
+        
+        // Validate deliverable exists
+        if (bytes(account.deliverables[verifierInput.id].id).length == 0) {
+            revert("Deliverable does not exist");
+        }
+        Deliverable storage deliverable = account.deliverables[verifierInput.id];
         if (keccak256(deliverable.modelRootHash) != keccak256(verifierInput.modelRootHash)) {
             revert InvalidVerifierInput("model root hash mismatch");
         }
+        
+        // Verify TEE signature
         bool teePassed = verifierInput.verifySignature(account.providerSigner);
         if (!teePassed) {
             revert InvalidVerifierInput("TEE settlement validation failed");
@@ -206,7 +229,7 @@ contract FineTuningServing is Ownable, Initializable, IServing {
         uint fee = verifierInput.taskFee;
         if (deliverable.acknowledged) {
             require(verifierInput.encryptedSecret.length != 0, "secret should not be empty");
-            account.deliverables[verifierInput.index].encryptedSecret = verifierInput.encryptedSecret;
+            deliverable.encryptedSecret = verifierInput.encryptedSecret;
         } else {
             require(verifierInput.encryptedSecret.length == 0, "secret should be empty");
             fee = (fee * penaltyPercentage) / 100;
@@ -217,31 +240,36 @@ contract FineTuningServing is Ownable, Initializable, IServing {
     }
 
     function _settleFees(Account storage account, uint amount) private {
-        if (amount > (account.balance - account.pendingRefund)) {
-            uint remainingFee = amount - (account.balance - account.pendingRefund);
+        uint availableBalance = account.balance - account.pendingRefund;
+        
+        if (amount > availableBalance) {
+            uint remainingFee = amount - availableBalance;
             if (account.pendingRefund < remainingFee) {
                 revert InvalidVerifierInput("insufficient balance in pendingRefund");
             }
 
             account.pendingRefund -= remainingFee;
-            for (int i = int(account.refunds.length - 1); i >= 0; i--) {
-                Refund storage refund = account.refunds[uint(i)];
+            
+            // Optimized: Process from the end with early exit
+            uint refundsLength = account.refunds.length;
+            for (uint i = refundsLength; i > 0 && remainingFee > 0; i--) {
+                Refund storage refund = account.refunds[i - 1];
                 if (refund.processed) {
                     continue;
                 }
 
                 if (refund.amount <= remainingFee) {
                     remainingFee -= refund.amount;
+                    refund.amount = 0;
+                    refund.processed = true;
                 } else {
                     refund.amount -= remainingFee;
                     remainingFee = 0;
-                }
-
-                if (remainingFee == 0) {
                     break;
                 }
             }
         }
+        
         account.balance -= amount;
         ledger.spendFund(account.user, amount);
         emit BalanceUpdated(account.user, msg.sender, account.balance, account.pendingRefund);
